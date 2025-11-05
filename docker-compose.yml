@@ -1,0 +1,19 @@
+version: "3.8"
+
+services:
+  pjud-scraper:
+    build: .
+    container_name: pjud-scraper
+    volumes:
+      # Persistir los datos descargados
+      - ./data:/app/data
+    environment:
+      # Configuración para Playwright en Docker
+      - NODE_ENV=production
+    restart: unless-stopped
+    # Si necesitas límites de recursos, descomenta y ajusta:
+    # deploy:
+    #   resources:
+    #     limits:
+    #       cpus: '2'
+    #       memory: 2G

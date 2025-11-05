@@ -1,0 +1,23 @@
+# Ignora la carpeta de dependencias. ¡Se instalan DENTRO del contenedor!
+node_modules
+
+# Ignora archivos de entorno y secretos
+.env
+.env.*
+
+# Archivos de logs y del sistema
+*.log
+.git
+.DS_Store
+
+# Reportes y cache de Playwright (si los generas localmente)
+playwright-report/
+test-results/
+
+# Archivos de datos (se montan como volumen, no copiar al contenedor)
+data/
+
+# Docker files (no necesarios dentro del contenedor)
+Dockerfile
+docker-compose.yml
+.dockerignore
