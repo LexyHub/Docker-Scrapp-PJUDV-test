@@ -1,5 +1,5 @@
 import { logger } from "../config/logs.js";
-import { transformCasoToFormData } from "../services/force-form.service.js";
+import { transformCaso } from "../utils/mappers.js";
 import { parsearPaginaConCheerio } from "./scrape-cheerio.task.js";
 
 const _URLS = {
@@ -18,9 +18,10 @@ export async function scrapeCausaTask(page, formData, index, causaId) {
   const todosLosDatos = [];
   let paginaToken = undefined; // Página 1 (sin token)
 
+  const parsedFormData = transformCaso(formData);
+
   try {
     while (true) {
-      const parsedFormData = transformCasoToFormData(formData);
       const url = _URLS[parsedFormData.competencia] || _URLS[1];
 
       const html = await page.evaluate(

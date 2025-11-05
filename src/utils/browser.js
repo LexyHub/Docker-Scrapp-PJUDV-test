@@ -21,18 +21,18 @@ export async function createBrowserInstance(tryHeadless = true) {
     const page = await context.newPage();
     logger.info(`Browser iniciado con éxito.`);
     await page.goto("https://oficinajudicialvirtual.pjud.cl/home/", {
-      timeout: 15000,
+      timeout: 30000,
     });
 
     await page.waitForFunction(
       () => typeof accesoConsultaCausas === "function",
-      { timeout: 10000 }
+      { timeout: 30000 }
     );
     await page.evaluate(() => accesoConsultaCausas());
     logger.info("Página principal cargada y lista.");
 
     await page.waitForFunction(() => typeof llamarCaptchaTodos === "function", {
-      timeout: 10000,
+      timeout: 30000,
     });
 
     return { browser, context, page };

@@ -391,7 +391,7 @@ export async function descargarArchivosConBatching(page, tasks, options = {}) {
 
   if (fallidas > 0) {
     logger.error(
-      `[Descargas] ⚠️  ${fallidas} archivos NO se pudieron descargar tras ${maxReintentos} reintentos:`
+      `[Descargas] ${fallidas} archivos NO se pudieron descargar tras ${maxReintentos} reintentos:`
     );
     archivosFallidos.slice(0, 5).forEach((task) => {
       logger.error(`  - ${task.url.substring(0, 80)}`);
