@@ -438,7 +438,6 @@ export async function scrapTablas(page, html, casoData) {
           _tableData.push(rowData);
           sumToMetadata("movimientos_procesados", 1);
         } else {
-          logger.warn("Movimiento ya existe, omitiendo...");
           sumToMetadata("movimientos_omitidos", 1);
         }
       } else {

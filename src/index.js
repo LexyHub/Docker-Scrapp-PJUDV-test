@@ -6,7 +6,6 @@ import { createFoldersIfNotExists, normalizeString } from "./utils/core.js";
 import { CONCURRENCIA_LIMIT } from "./constants/limits.js";
 import { scrapeCausaTask } from "./tasks/scrape-causa.task.js";
 import { retry } from "./utils/retry.js";
-import { transformCaso } from "./utils/mappers.js";
 import { scrapeModalTask } from "./tasks/scrape-modal.task.js";
 import { secuestrarToken } from "./utils/tokens.js";
 import {
@@ -19,12 +18,13 @@ import path from "path";
 import { getAllHashes } from "./services/hash.service.js";
 
 let TOKEN;
+const BD_LIMIT = 50; // Sólo para probar benchmarking
 
 async function main() {
   await createFoldersIfNotExists();
 
   logger.info("--- Fase 0: Obtención de Casos y Browser ---");
-  const casos = await getCausas({ limit: 1, applyHash: true });
+  const casos = await getCausas({ limit: BD_LIMIT, applyHash: true });
   try {
     await fs.writeFile(
       "data/casos.json",
