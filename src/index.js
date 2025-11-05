@@ -1,12 +1,11 @@
 import { logger } from "./config/logs.js";
-import { getCasos } from "./services/casos.service.js";
+import { getCausas } from "./services/casos.service.js";
 import { getAllMetadata, setMetadata } from "./services/metadata.service.js";
 import { createBrowserInstance } from "./utils/browser.js";
 import { createFoldersIfNotExists, normalizeString } from "./utils/core.js";
 import { CONCURRENCIA_LIMIT } from "./constants/limits.js";
 import { scrapeCausaTask } from "./tasks/scrape-causa.task.js";
 import { retry } from "./utils/retry.js";
-import { transformCaso } from "./utils/mappers.js";
 import { scrapeModalTask } from "./tasks/scrape-modal.task.js";
 import { secuestrarToken } from "./utils/tokens.js";
 import {
@@ -16,26 +15,27 @@ import {
 import { DATA_DIR, DOWNLOADS_DIR } from "./constants/directories.js";
 import { promises as fs } from "fs";
 import path from "path";
+import { getAllHashes } from "./services/hash.service.js";
 
 let TOKEN;
-const CASE_LIMITS = [0, 50];
+const BD_LIMIT = 50; // Sólo para probar benchmarking
 
 async function main() {
   await createFoldersIfNotExists();
 
   logger.info("--- Fase 0: Obtención de Casos y Browser ---");
-  const rawCasos = await getCasos(CASE_LIMITS[0], CASE_LIMITS[1]);
+  const casos = await getCausas({ limit: BD_LIMIT, applyHash: true });
   try {
     await fs.writeFile(
       "data/casos.json",
-      JSON.stringify(rawCasos, null, 2),
+      JSON.stringify(casos, null, 2),
       "utf-8"
     );
   } catch {}
-  setMetadata("total_casos", rawCasos.length);
-  logger.info(`Causas obtenidas: ${rawCasos.length}`);
+  setMetadata("total_casos", casos.length);
+  logger.info(`Causas obtenidas: ${casos.length}`);
 
-  const { browser, page } = await createBrowserInstance(false);
+  const { browser, page } = await createBrowserInstance(true);
   logger.info("Página principal cargada y lista.");
 
   // Secuestrar TOKEN global
@@ -44,7 +44,7 @@ async function main() {
   logger.info(`TOKEN secuestrado: ${TOKEN}`);
   logger.info("--- Fase 0 Completada ---");
 
-  const casos = rawCasos.map(transformCaso);
+  // const casos = rawCasos.map(transformCaso);
 
   logger.info(`Iniciando ${casos.length} tareas...`);
   const initialTiming = new Date().getTime();
@@ -55,6 +55,7 @@ async function main() {
     "Iniciando tareas concurrentes con límite de:",
     CONCURRENCIA_LIMIT.concurrency
   );
+  logger.info(`Total de HASHES: ${getAllHashes().length}`);
   const fase1Start = new Date().getTime();
   const tasksTabla = casos.map((formData, index) => {
     const causaId = crypto.randomUUID();
@@ -69,7 +70,7 @@ async function main() {
     .flatMap((r) => r.data);
   const fase1End = new Date().getTime();
   setMetadata("tiempo_fase_1", `${(fase1End - fase1Start) / 1000}s`);
-  console.clear();
+  // // console.clear();
   logger.info("--- Etapa 1 Completada ---");
   logger.info(`Se obtuvieron ${resultadosTablas.length} resultados de tablas.`);
   logger.info(
@@ -92,12 +93,12 @@ async function main() {
   const casosCompletos = resultadosFinales.filter((r) => r !== null);
   const fase2End = new Date().getTime();
   setMetadata("tiempo_fase_2", `${(fase2End - fase2Start) / 1000}s`);
-  console.clear();
+  // console.clear();
   logger.info("--- Etapa 2 Completada ---");
   logger.info(`Se completaron ${casosCompletos.length} casos con detalles.`);
 
   // fase 3: recolecion de archivos
-  console.clear();
+  // console.clear();
   logger.info("--- Etapa 3: Recolección de Tareas de Descarga de Archivos ---");
   const fase3Start = new Date().getTime();
   const allFileTasks = casosCompletos.flatMap((caso) => {
@@ -111,7 +112,7 @@ async function main() {
   );
 
   //fase 4: descarga de archivos
-  console.clear();
+  // console.clear();
   logger.info("--- Etapa 4: Descarga de Archivos ---");
   const fase4Start = new Date().getTime();
   let estadisticasDescarga = { exitosas: 0, fallidas: 0, total: 0 };
@@ -150,7 +151,7 @@ async function main() {
   );
 
   // Fase 5 guardar data
-  console.clear();
+  // console.clear();
   logger.info("--- Etapa 5: Guardar Datos ---");
   const fase5Start = new Date().getTime();
   const trabajosGuardado = casosCompletos.map(async (caso) => {
@@ -170,7 +171,7 @@ async function main() {
   setMetadata("tiempo_fase_5", `${(fase5End - fase5Start) / 1000}s`);
   logger.info("--- Etapa 5 Completada: Guardar Datos ---");
 
-  console.clear();
+  // console.clear();
   const finalTiming = new Date().getTime();
   logger.info("--- Scraping Completado ---");
   console.log();

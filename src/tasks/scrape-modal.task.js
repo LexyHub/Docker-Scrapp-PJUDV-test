@@ -10,6 +10,8 @@ import { setMetadata, sumToMetadata } from "../services/metadata.service.js";
 import { normalizeString } from "../utils/core.js";
 import { CASE_EXTRACTION_LIMIT } from "../constants/limits.js";
 import crypto from "crypto";
+import { movimientoHash } from "../utils/hashing.js";
+import { hasHash } from "../services/hash.service.js";
 
 async function extractModal(page, tokenCausa, tokenGlobal) {
   const URL =
@@ -319,7 +321,7 @@ export async function scrapeModalTask(page, casoData, TOKEN, index) {
   // Paralelizar el scrapeo de cuadernos en lugar de secuencial
   const scrapeoPromises = cuadernos.map(async ({ cuaderno, html }) => {
     if (html) {
-      const scrapedData = await scrapTablas(page, html);
+      const scrapedData = await scrapTablas(page, html, casoData);
       logger.info(`${logPrefix} Cuaderno "${cuaderno}" scrapeado.`);
       return { cuaderno, scrapedData };
     } else {
@@ -346,7 +348,7 @@ export async function scrapeModalTask(page, casoData, TOKEN, index) {
 
 // esto es Scrapeo del lado del servidor, lo que hace es extraer las tablas de cada cuaderno y en caso de haber archivos
 // descargarlos del lado del servidor o cliente dependiendo del caso
-export async function scrapTablas(page, html) {
+export async function scrapTablas(page, html, casoData) {
   const $ = load(html);
   const tablas = {
     historiaCiv: [],
@@ -426,9 +428,22 @@ export async function scrapTablas(page, html) {
           }
         }
       }
-      _tableData.push(rowData);
+      if (rowData.folio || rowData.fec_tramite || rowData.desc_tramite) {
+        const hash = movimientoHash({
+          desc_tramite: String(rowData.desc_tramite),
+          folio: String(rowData.folio),
+          fecha_movimiento: String(rowData.fec_tramite),
+        });
+        if (!hasHash(hash)) {
+          _tableData.push(rowData);
+          sumToMetadata("movimientos_procesados", 1);
+        } else {
+          sumToMetadata("movimientos_omitidos", 1);
+        }
+      } else {
+        _tableData.push(rowData);
+      }
     }
-    sumToMetadata("procesos", _tableData.length);
     tablas[key] = _tableData;
   }
   return tablas;

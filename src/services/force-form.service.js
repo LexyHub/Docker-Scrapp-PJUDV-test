@@ -1,7 +1,3 @@
-import { COMPETENCIAS } from "../constants/competencias.js";
-import { CORTES } from "../constants/cortes.js";
-import { TRIBUNALES } from "../constants/tribunales.js";
-
 export function serializeFormData(data) {
   return Object.entries(data)
     .filter(([_, value]) => value !== undefined && value !== null)
@@ -20,28 +16,6 @@ const _URLS = {
   5: "https://www.pjud.cl/ADIR_871/penal/consultaRitPenal.php",
   6: "https://www.pjud.cl/ADIR_871/cobranza/consultaRitCobranza.php",
 };
-
-export function transformCasoToFormData(caso) {
-  const competencia = COMPETENCIAS[caso["competencia"]] || 0;
-  const conCorte = CORTES[caso["corte"]] || 0;
-  const conTribunal = TRIBUNALES[caso["tribunal"]] || 0;
-
-  const formData = {
-    competencia: competencia,
-    conCorte: conCorte,
-    conTribunal: conTribunal,
-    conTipoCausa: caso["libro"] || "E",
-    conRolCausa: parseInt(caso["rol"], 10),
-    conEraCausa: parseInt(caso["año"], 10),
-    ruc1: "",
-    ruc2: "",
-    rucPen1: "",
-    rucPen2: "",
-    conCaratulado: "",
-  };
-
-  return formData;
-}
 
 /**
  * Función para llamar al reCAPTCHA en todas las páginas que lo requieran
