@@ -491,7 +491,7 @@ export async function scrapTablas(page, html) {
         const hash = movimientoHash({
           desc_tramite: String(rowData.desc_tramite),
           folio: String(rowData.folio),
-          fecha_movimiento: String(rowData.fec_tramite),
+          fecha_movimiento: String(rowData.fec_tramite.split(" ")[0]),
         });
         if (!hasHash(hash)) {
           _tableData.push(rowData);
