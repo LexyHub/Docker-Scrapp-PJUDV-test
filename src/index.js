@@ -18,7 +18,7 @@ import path from "path";
 import { getAllHashes } from "./services/hash.service.js";
 
 let TOKEN;
-const BD_LIMIT = 50; // Sólo para probar benchmarking
+const BD_LIMIT = 1; // Sólo para probar benchmarking
 
 async function main() {
   await createFoldersIfNotExists();
@@ -35,7 +35,7 @@ async function main() {
   setMetadata("total_casos", casos.length);
   logger.info(`Causas obtenidas: ${casos.length}`);
 
-  const { browser, page } = await createBrowserInstance(true);
+  const { browser, page } = await createBrowserInstance(false);
   logger.info("Página principal cargada y lista.");
 
   // Secuestrar TOKEN global
@@ -91,7 +91,9 @@ async function main() {
     );
   });
   const resultadosFinales = await Promise.all(tasksModales);
-  const casosCompletos = resultadosFinales.filter((r) => r !== null);
+  const casosCompletos = resultadosFinales
+    .filter((r) => r !== null)
+    .map((r) => ({ ...r.data, id: crypto.randomUUID() }));
   const fase2End = new Date().getTime();
   setMetadata("tiempo_fase_2", `${(fase2End - fase2Start) / 1000}s`);
   // console.clear();
@@ -126,7 +128,7 @@ async function main() {
       allFileTasks,
       {
         concurrencia: 15, // 15 descargas simultáneas con stream
-        batchSize: 100, // 100 archivos por lote
+        batchSize: 50, // 100 archivos por lote
         delayEntreLotes: 5, // 5ms de espera entre lotes
         maxReintentos: 2, // 2 reintentos adicionales para archivos fallidos
       }

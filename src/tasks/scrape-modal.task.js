@@ -37,7 +37,7 @@ async function extractModal(page, tokenCausa, tokenGlobal) {
             "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
             "Cache-Control": "no-cache",
           },
-          timeout: 15000,
+          timeout: 60000,
         });
         if (!response.ok()) {
           throw new Error(`Respuesta no OK: ${response.status()}`);
@@ -68,6 +68,7 @@ async function extractModal(page, tokenCausa, tokenGlobal) {
  * @param {object} preScrapedData data preliminar del caso
  * @param {object} page instancia de Playwright Page
  * @returns {Promise<object>} data scrapeda del modal
+ * @deprecated
  */
 async function parsearDatosModal(html, preScrapedData, page) {
   const $ = load(html);
@@ -139,7 +140,7 @@ async function parsearDatosModal(html, preScrapedData, page) {
  */
 async function getDataAndCuadernos(page, modalHtml, TOKEN, preScrapedData) {
   // parsearDatosModal es async y devuelve una Promise, resolverla aquí
-  const data = await parsearDatosModal(modalHtml, preScrapedData, page);
+  // const data = await parsearDatosModal(modalHtml, preScrapedData, page);
   const $ = load(modalHtml);
 
   const cuadernos = $("#selCuaderno option")
@@ -172,11 +173,12 @@ async function getDataAndCuadernos(page, modalHtml, TOKEN, preScrapedData) {
       page,
       infoNotificacionesReceptorToken
     );
-  data.info_notificaciones_receptor = scrapeInfoNotificacionesReceptor(
+  const info_notificaciones_receptor = scrapeInfoNotificacionesReceptor(
     infoNotificacionesReceptorHtml
   );
 
-  return { data, cuadernosPromise: cuadernosFetch };
+  // return { data, cuadernosPromise: cuadernosFetch };
+  return { cuadernosPromise: cuadernosFetch, info_notificaciones_receptor };
 }
 
 /**
@@ -360,13 +362,18 @@ export async function scrapeModalTask(page, casoData, TOKEN, index) {
 
   // Ahora extraemos la data del modal y los cuadernos
   const result = await getDataAndCuadernos(page, modalHtml, TOKEN, casoData);
-  if (!result || !result.data) {
+  // if (!result || !result.data) {
+  if (!result) {
     logger.warn(`${logPrefix} No se pudo obtener data/cuadernos. Saltando.`);
     return null;
   }
 
-  const { data, cuadernosPromise } = result;
-  logger.info(`${logPrefix} Iniciando scrapeo de proceso "${data.proceso}"`);
+  // refiriendonos a cuadernos
+  const data = { cuadernos: {}, info_notificaciones_receptor: [] };
+  // const { data, cuadernosPromise } = result;
+  const { cuadernosPromise, info_notificaciones_receptor } = result;
+  // logger.info(`${logPrefix} Iniciando scrapeo de proceso "${data.proceso}"`);
+  logger.info(`${logPrefix} Iniciando scrapeo de proceso "${casoData.id}"`);
 
   // los cuadernos vienen como promesa, esperamos a que TODAS se resuelvan
   const cuadernos = await Promise.all(cuadernosPromise);
@@ -394,10 +401,11 @@ export async function scrapeModalTask(page, casoData, TOKEN, index) {
       data["cuadernos"][resultado.cuaderno] = resultado.scrapedData;
     }
   });
+  data.info_notificaciones_receptor = await info_notificaciones_receptor;
 
   logger.info(`${logPrefix} Scraping del caso completado.`);
 
-  return data;
+  return { data };
 }
 
 /**
@@ -434,8 +442,11 @@ export async function scrapTablas(page, html) {
     for (const rowElement of rows) {
       const rowData = {};
       const $row = $(rowElement);
+      const anexoTokensPendientes = []; // Almacenar tokens de anexos para procesar después
 
       const cells = $row.find("td").get();
+
+      // PRIMERA PASADA: Extraer toda la data de texto y tokens de anexos (sin hacer fetch aún)
       for (let cellIndex = 0; cellIndex < cells.length; cellIndex++) {
         const cellElement = cells[cellIndex];
         const $cell = $(cellElement);
@@ -462,44 +473,80 @@ export async function scrapTablas(page, html) {
             });
             rowData[key] = archivos.length > 0 ? archivos : [];
           } else if (isAnexo) {
-            // acá es mas complicada la descarga porque hay que scrapear otro modal interno por cada anexo
-            // aparte que los documentos de los anexos NECESITAN tokens y sesion, por ende se hace del lado del cliente la descarga
-            const anexos = [];
-
+            // Extraer los tokens de anexos sin hacer peticiones aún
             const anexoLinks = $cell
               .find("a[href*='modalAnexoSolicitudCivil']")
               .get();
 
+            const tokens = [];
             for (const linkElement of anexoLinks) {
               const onclick = $(linkElement).attr("onclick") || "";
               const token = secuestrarFuncToken(onclick);
-              if (!token) continue;
-
-              const anexoHtml = await extractAnexoModal(page, token);
-              if (anexoHtml) {
-                const anexoData = await scrapDataFromAnexo(anexoHtml);
-                anexos.push(anexoData);
+              if (token) {
+                tokens.push(token);
               }
             }
-            rowData[key] = anexos;
+
+            // Guardar los tokens asociados a esta celda (usar cellIndex como identificador único)
+            if (tokens.length > 0) {
+              anexoTokensPendientes.push({ cellIndex, key, tokens });
+            }
+
+            // Inicializar con array vacío por ahora
+            rowData[key] = [];
           } else {
             rowData[key] = $cell.text().trim();
           }
         }
       }
+
+      // SEGUNDA PASADA: Ahora que tenemos toda la data de texto, verificar el hash
       if (rowData.folio || rowData.fec_tramite || rowData.desc_tramite) {
         const hash = movimientoHash({
           desc_tramite: String(rowData.desc_tramite),
           folio: String(rowData.folio),
           fecha_movimiento: String(rowData.fec_tramite.split(" ")[0]),
         });
+
         if (!hasHash(hash)) {
+          // El movimiento es nuevo, procesar los anexos pendientes
+          for (const { key: cellKey, tokens } of anexoTokensPendientes) {
+            const anexos = [];
+
+            for (const token of tokens) {
+              const anexoHtml = await extractAnexoModal(page, token);
+              if (anexoHtml) {
+                const anexoData = await scrapDataFromAnexo(anexoHtml);
+                anexos.push(anexoData);
+              }
+            }
+
+            rowData[cellKey] = anexos;
+          }
+
           _tableData.push(rowData);
           sumToMetadata("movimientos_procesados", 1);
         } else {
+          // El movimiento ya existe, no procesar anexos
           sumToMetadata("movimientos_omitidos", 1);
         }
       } else {
+        // No es un movimiento con folio/tramite, agregar directamente
+        // Si hay anexos pendientes, procesarlos de todas formas
+        for (const { key: cellKey, tokens } of anexoTokensPendientes) {
+          const anexos = [];
+
+          for (const token of tokens) {
+            const anexoHtml = await extractAnexoModal(page, token);
+            if (anexoHtml) {
+              const anexoData = await scrapDataFromAnexo(anexoHtml);
+              anexos.push(anexoData);
+            }
+          }
+
+          rowData[cellKey] = anexos;
+        }
+
         _tableData.push(rowData);
       }
     }
