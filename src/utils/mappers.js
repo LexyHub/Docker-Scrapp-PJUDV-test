@@ -1,13 +1,10 @@
-import { COMPETENCIAS } from "../constants/competencias.js";
 import { CORTES } from "../constants/cortes.js";
-import { TRIBUNALES } from "../constants/tribunales.js";
 
 /**
  * Transforma un objeto caso a un formato estandarizado.
  * @param {*} caso
  * @returns caso formateado
  */
-
 export function transformCaso(caso) {
   const conCorte = CORTES[caso["corte"]] || 0;
 

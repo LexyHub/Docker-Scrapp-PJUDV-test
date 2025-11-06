@@ -61,6 +61,7 @@ async function main() {
     const causaId = crypto.randomUUID();
 
     return CONCURRENCIA_LIMIT(() =>
+      // llenamos los forms y extraemos el caso
       retry(() => scrapeCausaTask(page, formData, index + 1, causaId), 3, 2000)
     );
   });
@@ -131,8 +132,8 @@ async function main() {
       }
     );
 
-    setMetadata("archivos_descargados", estadisticasDescarga.exitosas);
-    setMetadata("archivos_fallidos", estadisticasDescarga.fallidas);
+    setMetadata("descargas_de_archivo_exitosas", estadisticasDescarga.exitosas);
+    setMetadata("descargas_de_archivo_fallidas", estadisticasDescarga.fallidas);
   } else {
     logger.info("No se encontraron archivos para descargar.");
   }

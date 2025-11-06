@@ -1,9 +1,13 @@
 import { logger } from "../config/logs.js";
 import { delay } from "../utils/core.js";
 
-// funcion CORE para el scraping, si nos bloquean, se bloquea la solicitud o sobrecarga el servidor por muchas simultaneas
-// se crea una funcion retry que acepta un callback asincronico y lo reintenta N veces con un delay entre cada intento
-// esto evita que por ejemplo archivos se pierdan o no se descartugen correctamente, y tambien para modales
+/**
+ * Función para reintentar una operación asíncrona en caso de fallo.
+ * @param {*} asyncFn - La función asíncrona a reintentar.
+ * @param {*} maxRetries - El número máximo de reintentos.
+ * @param {*} baseDelay - El tiempo base de espera entre reintentos.
+ * @returns {Promise<*>} - La promesa resultante de la función asíncrona.
+ */
 export async function retry(asyncFn, maxRetries = 3, baseDelay = 2000) {
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {

@@ -13,6 +13,14 @@ import crypto from "crypto";
 import { movimientoHash } from "../utils/hashing.js";
 import { hasHash } from "../services/hash.service.js";
 
+/**
+ * Realiza una petición POST para extraer el HTML (texto) del modal de una causa civil.
+ * Implementa reintentos en caso de fallo.
+ * @param {Object} page - Instancia de Playwright Page.
+ * @param {string} tokenCausa - Token específico de la causa para la petición.
+ * @param {string} tokenGlobal - Token global de sesión anónima para la petición.
+ * @returns {Promise<string|null>} HTML del modal o null en caso de error.
+ */
 async function extractModal(page, tokenCausa, tokenGlobal) {
   const URL =
     "https://oficinajudicialvirtual.pjud.cl/ADIR_871/civil/modal/causaCivil.php";
@@ -50,7 +58,17 @@ async function extractModal(page, tokenCausa, tokenGlobal) {
   }
 }
 
-// se le agregó page para poder scrapear data adicional desde el lado del cliente
+/**
+ * Función para scrapear data del modal de causa civil.
+ * Esta data incluye información inicial del caso (ROL, estado adm. y proc., etapa, texto demanda, anexo, etc.).
+ * Incluye información de notificaciones receptor.
+ * Incluye datos de Historia, Litigantes, Notificaciones, Escritos y Exhortos por cada cuaderno.
+ * Además extrae tokens necesarios para tasks de descarga de archivos (FASE 4).
+ * @param {string} html el HTML extraído por petición
+ * @param {object} preScrapedData data preliminar del caso
+ * @param {object} page instancia de Playwright Page
+ * @returns {Promise<object>} data scrapeda del modal
+ */
 async function parsearDatosModal(html, preScrapedData, page) {
   const $ = load(html);
   const data = { ...preScrapedData };
@@ -111,7 +129,14 @@ async function parsearDatosModal(html, preScrapedData, page) {
   return data;
 }
 
-// tambien se obtiene la data de info. notificaciones receptor
+/**
+ * Función para obtener datos del modal e info. notificaciones receptor.
+ * @param {object} page Instancia de Playwright Page.
+ * @param {string} modalHtml HTML del modal.
+ * @param {string} TOKEN Token global de sesión anónima.
+ * @param {object} preScrapedData Datos pre-scrapeados.
+ * @returns {Promise<object>} Datos iniciales del modal y promesas para scrapeo de cuadernos
+ */
 async function getDataAndCuadernos(page, modalHtml, TOKEN, preScrapedData) {
   // parsearDatosModal es async y devuelve una Promise, resolverla aquí
   const data = await parsearDatosModal(modalHtml, preScrapedData, page);
@@ -154,7 +179,11 @@ async function getDataAndCuadernos(page, modalHtml, TOKEN, preScrapedData) {
   return { data, cuadernosPromise: cuadernosFetch };
 }
 
-// para scrapear data del modal de info receptor
+/**
+ * Función para scrapear información del receptor.
+ * @param {string} html - HTML del modal de información de receptor.
+ * @returns {Array} Datos extraídos del modal.
+ */
 function scrapeInfoNotificacionesReceptor(html) {
   const $ = load(html || "");
 
@@ -182,7 +211,13 @@ function scrapeInfoNotificacionesReceptor(html) {
   return result;
 }
 
-// para extraer información del receptor
+/**
+ * Función para extraer el HTML del modal de información de receptor.
+ * Implementa reintentos en caso de fallo.
+ * @param {Object} page - Instancia de Playwright Page.
+ * @param {string} token - Valor del token específico para la petición.
+ * @returns {Promise<string|null>} HTML del modal de información de receptor o null en caso de error.
+ */
 async function extractInfoNotificacionesReceptor(page, token) {
   const URL =
     "https://oficinajudicialvirtual.pjud.cl/ADIR_871/civil/modal/receptorCivil.php";
@@ -217,7 +252,11 @@ async function extractInfoNotificacionesReceptor(page, token) {
   }
 }
 
-// scrape anexo de la causa
+/**
+ * Función para scrapear anexo de la causa (anexo específico)
+ * @param {string} html HTML del modal de anexos
+ * @returns {Array} Datos extraídos del modal.
+ */
 function scrapeAnexoCausaModal(html) {
   const $ = load(html);
 
@@ -249,7 +288,13 @@ function scrapeAnexoCausaModal(html) {
   return data;
 }
 
-// forzamos peticion
+/**
+ * Función para extraer el HTML del modal de anexos (específico de anexos) de una causa civil.
+ * Implementa reintentos en caso de fallo.
+ * @param {Object} page - Instancia de Playwright Page.
+ * @param {string} tokenAnexo - Valor del token específico para la petición.
+ * @returns {Promise<string|null>} HTML del modal de anexos o null en caso de error.
+ */
 async function extractAnexoCausaModal(page, tokenAnexo) {
   const URL =
     "https://oficinajudicialvirtual.pjud.cl/ADIR_871/civil/modal/anexoCausaCivil.php";
@@ -290,7 +335,14 @@ async function extractAnexoCausaModal(page, tokenAnexo) {
   }
 }
 
-// función principal de la task de scraping de modales
+/**
+ * Función principal de la Etapa 2 para scrapear modal de una causa civil. De éste derivan los cuadernos.
+ * @param {Object} page - Instancia de Playwright Page.
+ * @param {Object} casoData - Objeto con datos preliminares del caso (rol, modal_token, etc).
+ * @param {string} TOKEN - Token global de sesión para peticiones.
+ * @param {number} index - Índice del caso en la lista (para logging).
+ * @returns {Promise<Object|null>} Objeto con data completa del caso, incluyendo cuadernos scrapeados.
+ */
 export async function scrapeModalTask(page, casoData, TOKEN, index) {
   const logPrefix = `[Modal ${index}: ${casoData.rol}]`;
   const idCausaJWT = casoData.modal_token;
@@ -299,12 +351,14 @@ export async function scrapeModalTask(page, casoData, TOKEN, index) {
     return { ...casoData, status: "error", error: "ID_SECUESTRO_FALLIDO" };
   }
 
+  // Obtenemos el HTML del Modal de la Causa mediante petición
   const modalHtml = await extractModal(page, idCausaJWT, TOKEN);
   if (!modalHtml) {
     logger.warn(`${logPrefix} No se obtuvo HTML del modal. Saltando.`);
     return { ...casoData, status: "error", error: "MODAL_HTML_VACIO" };
   }
 
+  // Ahora extraemos la data del modal y los cuadernos
   const result = await getDataAndCuadernos(page, modalHtml, TOKEN, casoData);
   if (!result || !result.data) {
     logger.warn(`${logPrefix} No se pudo obtener data/cuadernos. Saltando.`);
@@ -314,13 +368,15 @@ export async function scrapeModalTask(page, casoData, TOKEN, index) {
   const { data, cuadernosPromise } = result;
   logger.info(`${logPrefix} Iniciando scrapeo de proceso "${data.proceso}"`);
 
+  // los cuadernos vienen como promesa, esperamos a que TODAS se resuelvan
   const cuadernos = await Promise.all(cuadernosPromise);
   logger.info(`${logPrefix} Obtenidos ${cuadernos.length} cuadernos.`);
   logger.info("Ejecutando scrapeo de cuadernos...");
 
-  // Paralelizar el scrapeo de cuadernos en lugar de secuencial
+  // Paralelizamos el scrapeo de cada cuaderno
   const scrapeoPromises = cuadernos.map(async ({ cuaderno, html }) => {
     if (html) {
+      // ahora hacemos efectivo el scrapeo de las tablas del cuaderno
       const scrapedData = await scrapTablas(page, html, casoData);
       logger.info(`${logPrefix} Cuaderno "${cuaderno}" scrapeado.`);
       return { cuaderno, scrapedData };
@@ -344,11 +400,14 @@ export async function scrapeModalTask(page, casoData, TOKEN, index) {
   return data;
 }
 
-/* Funciones auxiliares */
-
-// esto es Scrapeo del lado del servidor, lo que hace es extraer las tablas de cada cuaderno y en caso de haber archivos
-// descargarlos del lado del servidor o cliente dependiendo del caso
-export async function scrapTablas(page, html, casoData) {
+/**
+ * Función para scrapear tablas del contenido de un modal de causa. Se incluyen tablas de Historia, Litigantes, Notificaciones, Escritos y Exhortos.
+ * Además, se aplica un hashing para determinar si un movimiento ya fue procesado previamente o no.
+ * @param {object} page Instancia de Playwright Page.
+ * @param {string} html HTML del cuaderno a scrapear.
+ * @returns {Promise<object>} Objeto con data scrapeda de las tablas.
+ */
+export async function scrapTablas(page, html) {
   const $ = load(html);
   const tablas = {
     historiaCiv: [],
@@ -449,7 +508,13 @@ export async function scrapTablas(page, html, casoData) {
   return tablas;
 }
 
-// modal interno y especificoi para extraer anexos, se requieren token y sesion por eso dell lado del cliente
+/**
+ * Función para extraer el HTML del modal de anexos; específico de un registro de "Historia" de una causa civil.
+ * Implementa reintentos en caso de fallo.
+ * @param {Object} page - Instancia de Playwright Page.
+ * @param {string} val - Valor del token específico para la petición.
+ * @returns {Promise<string|null>} HTML del modal de anexos o null en caso de error.
+ */
 export async function extractAnexoModal(page, val) {
   const URL =
     "https://oficinajudicialvirtual.pjud.cl/ADIR_871/civil/modal/anexoCausaSolicitudCivil.php";
@@ -490,8 +555,11 @@ export async function extractAnexoModal(page, val) {
   }
 }
 
-// como tambein es peticion que trae HTML se puede scrapear del lado del servidor, acá se extrae la data del anexo y se guardan los archivos
-// para despues mandalro a la task de descarga
+/**
+ * Función para scrapear información del anexo.
+ * @param {string} html - HTML del modal de anexos.
+ * @returns {Promise<Object>} Datos extraídos del modal.
+ */
 export async function scrapDataFromAnexo(html) {
   const $ = load(html);
   const data = {};

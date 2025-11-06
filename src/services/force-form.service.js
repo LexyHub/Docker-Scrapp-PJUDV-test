@@ -1,3 +1,8 @@
+/**
+ * Función para serializar un objeto de datos en formato application/x-www-form-urlencoded
+ * @param {object} data Objeto con los datos del formulario
+ * @returns {string} Cadena de texto en formato application/x-www-form-urlencoded
+ */
 export function serializeFormData(data) {
   return Object.entries(data)
     .filter(([_, value]) => value !== undefined && value !== null)

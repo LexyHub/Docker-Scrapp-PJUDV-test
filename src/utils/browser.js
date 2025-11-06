@@ -5,7 +5,7 @@ import { logger } from "../config/logs.js";
  * Crea una instancia de navegador (SOLO EL BROWSER).
  * Intenta primero en modo headless y si falla, reintenta en modo normal (con GUI).
  * @param {boolean} tryHeadless - Indica si se debe intentar iniciar en modo headless.
- * @returns {Promise<import('playwright').Browser>} - La instancia del navegador.
+ * @returns {Promise<Object>} - La instancia del navegador.
  */
 export async function createBrowserInstance(tryHeadless = true) {
   let browser;

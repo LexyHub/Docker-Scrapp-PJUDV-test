@@ -2,6 +2,11 @@ import db from "./db.service.js";
 import { movimientoHash } from "../utils/hashing.js";
 import { addHash } from "./hash.service.js";
 
+/**
+ * Función para formatear fechas de distintos tipos a formato DD/MM/YYYY
+ * @param {*} value
+ * @returns {string} Fecha formateada o cadena vacía si no es válida
+ */
 function formatDateDDMMYYYY(value) {
   if (!value) return "";
   if (typeof value === "string") {
@@ -38,7 +43,6 @@ function formatDateDDMMYYYY(value) {
  * @returns {Promise<Array>} Array de causas con movimientos integrados y con hash opcional.
  */
 export async function getCausas({ limit = null, applyHash = true }) {
-  // Build SQL with optional LIMIT param
   const baseSql = `
     SELECT
       c.rol,
@@ -89,6 +93,7 @@ export async function getCausas({ limit = null, applyHash = true }) {
           ...mv,
           fecha_movimiento: fecha_movimiento_fmt,
         });
+        // agregamos el hash al almacenamiento en memoria
         addHash(hash);
         return {
           ...mv,

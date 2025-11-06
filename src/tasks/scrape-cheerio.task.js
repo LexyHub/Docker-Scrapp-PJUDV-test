@@ -4,6 +4,11 @@ import {
   secuestrarPaginaRit,
 } from "../utils/tokens.js";
 
+/**
+ * Función para scrapear resultados de una página en causa.
+ * @param {string} html - HTML de la página a scrapear.
+ * @returns {Object} Datos extraídos de la página.
+ */
 export function parsearPaginaConCheerio(html) {
   const htmlEnvuelto = `<table><tbody>${html}</tbody></table>`;
   const $ = load(htmlEnvuelto);

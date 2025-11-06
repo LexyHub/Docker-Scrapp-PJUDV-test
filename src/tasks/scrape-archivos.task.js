@@ -7,6 +7,15 @@ import path from "path";
 import crypto from "crypto";
 import pLimit from "p-limit";
 
+/**
+ * Función para recopilar y encolar tareas de descarga de archivos PDF desde la estructura de datos scrapeada.
+ * @param {object} data Estructura de datos scrapeada que contiene referencias a archivos PDF.
+ * @param {string} fileUUID UUID del archivo (nombre)
+ * @param {string} downloadsDir Directorio donde se guardarán las descargas
+ * @param {function} _normalizeString Función para normalizar nombres de archivos
+ * @returns {Array} Array de tareas de descarga
+ */
+//! PODRÍA OPTIMIZARSE MUCHO MÁS
 export function collectFileTasks(
   data,
   fileUUID,
@@ -21,7 +30,7 @@ export function collectFileTasks(
   for (const key of singleFileKeys) {
     const val = data[key];
     if (val && typeof val === "string" && val.startsWith("http")) {
-      sumToMetadata("archivos", 1);
+      sumToMetadata("descargas_archivo_encoladas", 1);
       const fileId = crypto.randomUUID();
       const relativePath = path.join(fileUUID, `${fileId}.pdf`);
       const fullPath = path.join(downloadsDir, relativePath);
@@ -37,7 +46,7 @@ export function collectFileTasks(
       if (!anexo || !anexo.doc) continue;
       // caso: doc es string (url)
       if (typeof anexo.doc === "string" && anexo.doc.startsWith("http")) {
-        sumToMetadata("archivos", 1);
+        sumToMetadata("descargas_archivo_encoladas", 1);
         const fileId = crypto.randomUUID();
         const relativePath = path.join(fileUUID, `${fileId}.pdf`);
         const fullPath = path.join(downloadsDir, relativePath);
@@ -48,7 +57,7 @@ export function collectFileTasks(
         for (let i = 0; i < anexo.doc.length; i++) {
           const entry = anexo.doc[i];
           if (typeof entry === "string" && entry.startsWith("http")) {
-            sumToMetadata("archivos", 1);
+            sumToMetadata("descargas_archivo_encoladas", 1);
             const fileId = crypto.randomUUID();
             const relativePath = path.join(fileUUID, `${fileId}.pdf`);
             const fullPath = path.join(downloadsDir, relativePath);
@@ -75,7 +84,7 @@ export function collectFileTasks(
             cellData.length > 0 &&
             cellData[0].url
           ) {
-            sumToMetadata("archivos", cellData.length);
+            sumToMetadata("descargas_archivo_encoladas", cellData.length);
             for (const fileInfo of cellData) {
               const { name: fileId, url, requiresSession } = fileInfo;
               const relativePath = path.join(fileUUID, `${fileId}.pdf`);
@@ -100,7 +109,10 @@ export function collectFileTasks(
           ) {
             for (const anexoItem of cellData) {
               if (Array.isArray(anexoItem.doc)) {
-                sumToMetadata("archivos", anexoItem.doc.length);
+                sumToMetadata(
+                  "descargas_archivo_encoladas",
+                  anexoItem.doc.length
+                );
                 for (const fileInfo of anexoItem.doc) {
                   if (fileInfo.url) {
                     const { name: fileId, url, requiresSession } = fileInfo;
@@ -127,6 +139,13 @@ export function collectFileTasks(
   return tasks;
 }
 
+/**
+ * Función para descargar un archivo PDF usando streams
+ * @param {string} url URL del archivo PDF a descargar
+ * @param {string} rutaSalida Ruta donde se guardará el archivo descargado
+ * @param {number} timeout Tiempo máximo de espera para la descarga
+ * @returns {Promise<string>} Promesa que se resuelve con la ruta del archivo descargado
+ */
 function descargarPDFStream(url, rutaSalida, timeout = 15000) {
   return new Promise((resolve, reject) => {
     const dir = path.dirname(rutaSalida);
@@ -190,6 +209,14 @@ function descargarPDFStream(url, rutaSalida, timeout = 15000) {
   });
 }
 
+/**
+ * Función para descargar un archivo PDF usando Playwright para manejar sesiones autenticadas
+ * @param {object} page Instancia de Playwright Page
+ * @param {string} url URL del archivo PDF a descargar
+ * @param {string} rutaSalida Ruta donde se guardará el archivo descargado
+ * @param {number} timeout Tiempo máximo de espera para la descarga
+ * @returns {Promise<string>} Promesa que se resuelve con la ruta del archivo descargado
+ */
 async function descargarConPlaywright(page, url, rutaSalida, timeout = 30000) {
   const dir = path.dirname(rutaSalida);
   await promiseFs.mkdir(dir, { recursive: true });
@@ -247,13 +274,13 @@ async function descargarArchivoConReintentos(
       await descargarPDFStream(url, fullPath, 15000);
     }
 
-    sumToMetadata("descargas_exitosas", 1);
+    // sumToMetadata("descargas_exitosas", 1);
     return true;
   } catch (error) {
     logger.error(
       `${logPrefix} Error: ${error.message} | URL: ${url.substring(0, 60)}`
     );
-    sumToMetadata("descargas_fallidas", 1);
+    // sumToMetadata("descargas_fallidas", 1);
     return false;
   }
 }

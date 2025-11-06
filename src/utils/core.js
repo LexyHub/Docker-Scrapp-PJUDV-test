@@ -2,7 +2,11 @@ import { promises as fs } from "fs";
 import { DATA_DIR, DOWNLOADS_DIR } from "../constants/directories.js";
 import { logger } from "../config/logs.js";
 
-// funcion utilitaria nomas para formatear string y quitar caracteres espceialses
+/**
+ * Normaliza un string eliminando caracteres especiales y convirtiendo a minúsculas.
+ * @param {string} str - El string a normalizar.
+ * @returns {string} - El string normalizado.
+ */
 export function normalizeString(str) {
   if (!str) return "";
 
@@ -15,11 +19,20 @@ export function normalizeString(str) {
     .replace(/\s+/g, "_");
 }
 
-// funcion de delay, de momento usada slo por el retry
+/**
+ * Función de delay.
+ * @param {number} ms - Milisegundos a esperar.
+ * @returns {Promise<void>} - Promesa que se resuelve después del delay.
+ */
 export function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/**
+ * Crea las carpetas necesarias si no existen.
+ * @returns {Promise<boolean>} - Verdadero si las carpetas fueron creadas o ya existían.
+ * @throws {Error} - Si ocurre un error al crear las carpetas.
+ */
 export async function createFoldersIfNotExists() {
   const folders = [DATA_DIR, DOWNLOADS_DIR];
   try {

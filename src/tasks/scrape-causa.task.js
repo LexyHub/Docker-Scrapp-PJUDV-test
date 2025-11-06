@@ -11,6 +11,15 @@ const _URLS = {
   6: "https://oficinajudicialvirtual.pjud.cl/ADIR_871/cobranza/consultaRitCobranza.php",
 };
 
+/**
+ * Función principal de la task de scraping de causas civiles. Llena el formulario y obtiene los datos paginados.
+ * @param {Object} page - Instancia de Playwright Page.
+ * @param {Object} formData - Datos del formulario para la causa.
+ * @param {number} index - Índice de la causa en la lista para logging.
+ * @param {string} causaId - ID de la causa.
+ * @returns {Promise<Object>} Objeto con ID de la causa y datos extraídos.
+ * @throws {Error} Si ocurre un error durante el scraping.
+ */
 export async function scrapeCausaTask(page, formData, index, causaId) {
   const logPrefix = `[Causa N° ${index}: ${causaId}]`;
   logger.info(`${logPrefix} Iniciando crawler...`);
@@ -84,6 +93,7 @@ export async function scrapeCausaTask(page, formData, index, causaId) {
         break;
       }
 
+      // extraemos la data
       const resultado = parsearPaginaConCheerio(html);
       todosLosDatos.push(...resultado.data);
 
