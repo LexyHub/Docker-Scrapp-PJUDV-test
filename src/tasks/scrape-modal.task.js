@@ -1,5 +1,5 @@
 import { load } from "cheerio";
-import { logger } from "../config/logs.js";
+import { logger, logToFile } from "../config/logs.js";
 import { retry } from "../utils/retry.js";
 import {
   secuestrarFuncToken,
@@ -469,7 +469,15 @@ export async function scrapTablas(page, html) {
               const value = $(formElement).find("input").attr("value") || "";
               const fileType = $(formElement).find("input").attr("name") || "";
               const url = `https://oficinajudicialvirtual.pjud.cl/${rawUrl}?${fileType}=${value}`;
-              archivos.push({ name: crypto.randomUUID(), url });
+              logToFile({
+                message: `Archivo generado en URL: ${url}`,
+                type: "debug",
+              });
+              archivos.push({
+                name: crypto.randomUUID(),
+                url,
+                type: "regular",
+              });
             });
             rowData[key] = archivos.length > 0 ? archivos : [];
           } else if (isAnexo) {
@@ -502,10 +510,12 @@ export async function scrapTablas(page, html) {
 
       // SEGUNDA PASADA: Ahora que tenemos toda la data de texto, verificar el hash
       if (rowData.folio || rowData.fec_tramite || rowData.desc_tramite) {
+        // normalizamos fec_tramite
+        rowData.fec_tramite = String(rowData.fec_tramite.split(" ")[0]);
         const hash = movimientoHash({
           desc_tramite: String(rowData.desc_tramite),
           folio: String(rowData.folio),
-          fecha_movimiento: String(rowData.fec_tramite.split(" ")[0]),
+          fecha_movimiento: String(rowData.fec_tramite),
         });
 
         if (!hasHash(hash)) {
@@ -631,10 +641,12 @@ export async function scrapDataFromAnexo(html) {
         const value = $(formElement).find("input").attr("value") || "";
         const fileType = $(formElement).find("input").attr("name") || "";
         const url = `https://oficinajudicialvirtual.pjud.cl/${rawUrl}?${fileType}=${value}`;
+        logger.warn(`Anexo generado en URL: ${url}`);
         // Marcar archivos de anexo que necesitan Playwright (requieren sesión)
         archivos.push({
           name: crypto.randomUUID(),
           url,
+          type: "anexo",
           requiresSession: true,
         });
       });

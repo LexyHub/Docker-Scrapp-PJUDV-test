@@ -15,9 +15,12 @@ export async function createBrowserInstance(tryHeadless = true) {
     logger.info(
       `Iniciando browser en modo ${tryHeadless ? "headless" : "normal"}...`
     );
-    browser = await chromium.launch({ headless: tryHeadless });
+    browser = await chromium.launch({ headless: tryHeadless, devtools: true });
 
-    const context = await browser.newContext({ userAgent });
+    const context = await browser.newContext({
+      userAgent,
+      recordHar: { path: "data/network.har", content: "embed" },
+    });
     const page = await context.newPage();
     logger.info(`Browser iniciado con éxito.`);
     await page.goto("https://oficinajudicialvirtual.pjud.cl/home/", {

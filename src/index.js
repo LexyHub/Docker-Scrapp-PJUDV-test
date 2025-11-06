@@ -1,10 +1,13 @@
-import { logger } from "./config/logs.js";
+import { exportLogs, logger } from "./config/logs.js";
 import { getCausas } from "./services/casos.service.js";
 import { getAllMetadata, setMetadata } from "./services/metadata.service.js";
 import { createBrowserInstance } from "./utils/browser.js";
 import { createFoldersIfNotExists, normalizeString } from "./utils/core.js";
 import { CONCURRENCIA_LIMIT } from "./constants/limits.js";
-import { scrapeCausaTask } from "./tasks/scrape-causa.task.js";
+import {
+  scrapeCausaTask,
+  configureRateLimit,
+} from "./tasks/scrape-causa.task.js";
 import { retry } from "./utils/retry.js";
 import { scrapeModalTask } from "./tasks/scrape-modal.task.js";
 import { secuestrarToken } from "./utils/tokens.js";
@@ -23,6 +26,9 @@ const BD_LIMIT = 1; // Sólo para probar benchmarking
 async function main() {
   await createFoldersIfNotExists();
 
+  // Configurar rate limiting para scrape-causa (opcional)
+  configureRateLimit({ requestsPerBatch: 10, delayMs: 20 });
+
   logger.info("--- Fase 0: Obtención de Casos y Browser ---");
   const casos = await getCausas({ limit: BD_LIMIT, applyHash: true });
   try {
@@ -35,7 +41,7 @@ async function main() {
   setMetadata("total_casos", casos.length);
   logger.info(`Causas obtenidas: ${casos.length}`);
 
-  const { browser, page } = await createBrowserInstance(false);
+  const { browser, context, page } = await createBrowserInstance(false);
   logger.info("Página principal cargada y lista.");
 
   // Secuestrar TOKEN global
@@ -186,6 +192,10 @@ async function main() {
   console.log();
   logger.info(`Tiempo total: ${(finalTiming - initialTiming) / 1000}s`);
 
+  exportLogs();
+
+  // await browser.close();
+  await context.close();
   await browser.close();
 }
 

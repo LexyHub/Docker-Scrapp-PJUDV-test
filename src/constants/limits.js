@@ -8,4 +8,4 @@ export const CONCURRENT_CASES = pLimit(8); // Cuantos casos se pueden procesar s
 export const API_LIMIT = pLimit(4); // Cuantas llamadas a la API se pueden hacer simultáneamente
 
 export const CASE_EXTRACTION_LIMIT = pLimit(10); // Aumentado de 10 a 20 para cuadernos más rápidos
-export const CONCURRENCIA_LIMIT = pLimit(6);
+export const CONCURRENCIA_LIMIT = pLimit(5);
