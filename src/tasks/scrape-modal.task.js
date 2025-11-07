@@ -641,7 +641,8 @@ export async function scrapDataFromAnexo(html) {
         const value = $(formElement).find("input").attr("value") || "";
         const fileType = $(formElement).find("input").attr("name") || "";
         const url = `https://oficinajudicialvirtual.pjud.cl/${rawUrl}?${fileType}=${value}`;
-        logger.warn(`Anexo generado en URL: ${url}`);
+        // logger.debug(`Anexo generado en URL: ${url}`);
+        logToFile({ message: `Anexo generado en URL: ${url}`, type: "debug" });
         // Marcar archivos de anexo que necesitan Playwright (requieren sesión)
         archivos.push({
           name: crypto.randomUUID(),

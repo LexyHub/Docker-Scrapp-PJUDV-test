@@ -21,7 +21,7 @@ import path from "path";
 import { getAllHashes } from "./services/hash.service.js";
 
 let TOKEN;
-const BD_LIMIT = 1; // Sólo para probar benchmarking
+const BD_LIMIT = 50; // Sólo para probar benchmarking
 
 async function main() {
   await createFoldersIfNotExists();
@@ -110,14 +110,21 @@ async function main() {
   // console.clear();
   logger.info("--- Etapa 3: Recolección de Tareas de Descarga de Archivos ---");
   const fase3Start = new Date().getTime();
-  const allFileTasks = casosCompletos.flatMap((caso) => {
+
+  // Recolectar tareas y separar entre normales y celery
+  const taskResults = casosCompletos.map((caso) => {
     return collectFileTasks(caso, caso.id, DOWNLOADS_DIR, normalizeString);
   });
+
+  // Separar las tareas normales de las de celery
+  const allFileTasks = taskResults.flatMap((result) => result.tasks);
+  const allCeleryTasks = taskResults.flatMap((result) => result.celeryTasks);
+
   const fase3End = new Date().getTime();
   setMetadata("tiempo_fase_3", `${(fase3End - fase3Start) / 1000}s`);
   logger.info("--- Etapa 3 Completada ---");
   logger.info(
-    `Se recolectaron ${allFileTasks.length} archivos para descargar.`
+    `Se recolectaron ${allFileTasks.length} archivos para descarga local y ${allCeleryTasks.length} archivos para descarga en Celery.`
   );
 
   //fase 4: descarga de archivos

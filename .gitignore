@@ -34,6 +34,4 @@ test-results/
 playwright/.cache/
 
 # Datos generados por el scraper
-data/cases/
-data/downloads/
-data/casos.json
+data/*

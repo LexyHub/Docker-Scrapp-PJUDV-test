@@ -23,9 +23,14 @@ export function collectFileTasks(
   _normalizeString
 ) {
   const tasks = [];
+  // Para posible integración a Celery.
+  const celeryTasks = [];
+
   if (!data.cuadernos) return [];
 
   // Manejar archivos únicos en el objeto principal (texto_demanda, certificado_envio, ebook)
+  // Se deprecó porque es información que nunca cambia. No se eliminará por compatibilidad/necesidades futuras.
+  /*
   const singleFileKeys = ["texto_demanda", "certificado_envio", "ebook"];
   for (const key of singleFileKeys) {
     const val = data[key];
@@ -39,8 +44,11 @@ export function collectFileTasks(
       data[key] = relativePath;
     }
   }
+  */
 
   // Manejar anexos_de_la_causa que pueden venir como [{ doc: 'url', ... }, ...]
+  // Se deprecó porque es información que nunca cambia. No se eliminará por compatibilidad/necesidades futuras.
+  /*
   if (Array.isArray(data.anexos_de_la_causa)) {
     for (const anexo of data.anexos_de_la_causa) {
       if (!anexo || !anexo.doc) continue;
@@ -68,7 +76,9 @@ export function collectFileTasks(
       }
     }
   }
+  */
 
+  // recorremos archivos relacionados a movimientos
   for (const cuadernoName in data.cuadernos) {
     const cuaderno = data.cuadernos[cuadernoName];
     for (const tablaKey in cuaderno) {
@@ -84,16 +94,30 @@ export function collectFileTasks(
             cellData.length > 0 &&
             cellData[0].url
           ) {
-            sumToMetadata("descargas_archivo_encoladas", cellData.length);
             for (const fileInfo of cellData) {
               const { name: fileId, url, requiresSession } = fileInfo;
               const relativePath = path.join(fileUUID, `${fileId}.pdf`);
               const fullPath = path.join(downloadsDir, relativePath);
-              tasks.push({
-                url,
-                fullPath,
-                requiresSession: requiresSession || false,
-              });
+              if (requiresSession) {
+                sumToMetadata("descargas_archivo_encoladas", 1);
+                tasks.push({
+                  url,
+                  fullPath,
+                  requiresSession: true,
+                });
+              } else {
+                sumToMetadata("descargas_archivo_celery_encoladas", 1);
+                celeryTasks.push({
+                  url,
+                  fullPath,
+                });
+              }
+              // Lo sacamos de momento, para dividir colas
+              // tasks.push({
+              //   url,
+              //   fullPath,
+              //   requiresSession: requiresSession || false,
+              // });
 
               fileInfo.localPath = relativePath;
               delete fileInfo.url;
@@ -101,6 +125,8 @@ export function collectFileTasks(
             }
           }
 
+          // No recuerdo bien qué es lo que hacía esta sección, pero al parecer tiene que ver con la descarga
+          // de anexos
           if (
             Array.isArray(cellData) &&
             cellData.length > 0 &&
@@ -109,20 +135,25 @@ export function collectFileTasks(
           ) {
             for (const anexoItem of cellData) {
               if (Array.isArray(anexoItem.doc)) {
-                sumToMetadata(
-                  "descargas_archivo_encoladas",
-                  anexoItem.doc.length
-                );
                 for (const fileInfo of anexoItem.doc) {
                   if (fileInfo.url) {
                     const { name: fileId, url, requiresSession } = fileInfo;
                     const relativePath = path.join(fileUUID, `${fileId}.pdf`);
                     const fullPath = path.join(downloadsDir, relativePath);
-                    tasks.push({
-                      url,
-                      fullPath,
-                      requiresSession: requiresSession || false,
-                    });
+                    if (requiresSession) {
+                      sumToMetadata("descargas_archivo_encoladas", 1);
+                      tasks.push({
+                        url,
+                        fullPath,
+                        requiresSession: true,
+                      });
+                    } else {
+                      sumToMetadata("descargas_archivo_celery_encoladas", 1);
+                      celeryTasks.push({
+                        url,
+                        fullPath,
+                      });
+                    }
 
                     fileInfo.localPath = relativePath;
                     delete fileInfo.url;
@@ -136,7 +167,8 @@ export function collectFileTasks(
       }
     }
   }
-  return tasks;
+
+  return { tasks, celeryTasks };
 }
 
 /**
