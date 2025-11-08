@@ -1,8 +1,6 @@
 import { load } from "cheerio";
-import {
-  secuestrarDetalleCivil,
-  secuestrarPaginaRit,
-} from "../utils/tokens.js";
+import crypto from "crypto";
+import { secuestrarDetalleCivil } from "../utils/tokens.js";
 
 /**
  * Función para scrapear resultados de una página en causa.
@@ -12,7 +10,7 @@ import {
 export function parsearPaginaConCheerio(html) {
   const htmlEnvuelto = `<table><tbody>${html}</tbody></table>`;
   const $ = load(htmlEnvuelto);
-  const data = [];
+  let data = {};
 
   const rows = $("tr");
 
@@ -23,21 +21,15 @@ export function parsearPaginaConCheerio(html) {
     const onclickString = $(tds[0]).find("a").attr("onclick");
     const token = secuestrarDetalleCivil(onclickString);
 
-    data.push({
+    data = {
       id: crypto.randomUUID(),
       modal_token: token || null,
       rol: $(tds[1]).text().trim(),
       fecha_ingreso: $(tds[2]).text().trim(),
       caratulado: $(tds[3]).text().trim(),
       tribunal: $(tds[4]).text().trim(),
-    });
+    };
   });
 
-  const linkSiguiente = $("#sigId");
-  let nextTokenString = null;
-  if (linkSiguiente.length > 0) {
-    nextTokenString = linkSiguiente.attr("onclick");
-  }
-  const nextToken = secuestrarPaginaRit(nextTokenString);
-  return { data, nextToken };
+  return data;
 }

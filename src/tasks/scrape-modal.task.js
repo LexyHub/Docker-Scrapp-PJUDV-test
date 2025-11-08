@@ -1,17 +1,13 @@
 import { load } from "cheerio";
-import { logger, logToFile } from "../config/logs.js";
 import { retry } from "../utils/retry.js";
 import {
   secuestrarFuncToken,
-  secuestrarTokenAnexoCausaCivil,
   secuestrarTokenInfoNotificacionesRec,
 } from "../utils/tokens.js";
-import { setMetadata, sumToMetadata } from "../services/metadata.service.js";
 import { normalizeString } from "../utils/core.js";
 import { CASE_EXTRACTION_LIMIT } from "../constants/limits.js";
 import crypto from "crypto";
-import { movimientoHash } from "../utils/hashing.js";
-import { hasHash } from "../services/hash.service.js";
+import { extractAnexoModal, scrapDataFromAnexo } from "./scrape-anexo.task.js";
 
 /**
  * Realiza una petición POST para extraer el HTML (texto) del modal de una causa civil.
@@ -50,84 +46,11 @@ async function extractModal(page, tokenCausa, tokenGlobal) {
     return html;
   } catch (err) {
     // usar tokenCausa en lugar de una variable fuera de alcance
-    logger.error(
+    console.error(
       `[API Fetch] Error final en page.request para ${tokenCausa}: ${err.message}`
     );
-    sumToMetadata("causas_fallidas", 1);
     return null;
   }
-}
-
-/**
- * Función para scrapear data del modal de causa civil.
- * Esta data incluye información inicial del caso (ROL, estado adm. y proc., etapa, texto demanda, anexo, etc.).
- * Incluye información de notificaciones receptor.
- * Incluye datos de Historia, Litigantes, Notificaciones, Escritos y Exhortos por cada cuaderno.
- * Además extrae tokens necesarios para tasks de descarga de archivos (FASE 4).
- * @param {string} html el HTML extraído por petición
- * @param {object} preScrapedData data preliminar del caso
- * @param {object} page instancia de Playwright Page
- * @returns {Promise<object>} data scrapeda del modal
- * @deprecated
- */
-async function parsearDatosModal(html, preScrapedData, page) {
-  const $ = load(html);
-  const data = { ...preScrapedData };
-
-  const cells = $(".modal-body table tbody td")
-    .map((_, el) => $(el).text().trim())
-    .get();
-
-  if (!cells.length) {
-    data.cuadernos = {};
-    return data;
-  }
-
-  // Ahora extraemos data de la segunda tabla, mayoritariamente archivos
-  const dcells = $(".modal-body table").eq(1).find("tbody td");
-  const textoDemandaAction = dcells.eq(0).find("form").attr("action") || "";
-  const textoDemandaValue = dcells.eq(0).find("input").attr("value") || "";
-  const textoDemandaPath = dcells.eq(0).find("input").attr("name") || "";
-  const textoDemanda = `https://oficinajudicialvirtual.pjud.cl/${textoDemandaAction}?${textoDemandaPath}=${textoDemandaValue}`;
-
-  const certificadoEnvioAction = dcells.eq(2).find("form").attr("action") || "";
-  const certificadoEnvioValue = dcells.eq(2).find("input").attr("value") || "";
-  const certificadoEnvioPath = dcells.eq(2).find("input").attr("name") || "";
-  const certificadoEnvio = `https://oficinajudicialvirtual.pjud.cl/${certificadoEnvioAction}?${certificadoEnvioPath}=${certificadoEnvioValue}`;
-
-  const ebookAction = dcells.eq(3).find("form").attr("action") || "";
-  const ebookValue = dcells.eq(3).find("input").attr("value") || "";
-  const ebookPath = dcells.eq(3).find("input").attr("name") || "";
-  const ebook = `https://oficinajudicialvirtual.pjud.cl/${ebookAction}?${ebookPath}=${ebookValue}`;
-
-  data.texto_demanda = textoDemanda;
-  data.certificado_envio = certificadoEnvio;
-  data.ebook = ebook;
-
-  // ahora scrapeamos el anexo de causa, que es un modal que podría o no contener más rows
-  const tokenAnexo = dcells.eq(1).find("a").attr("onclick") || "";
-  const tokenAnexoSecuestrado = secuestrarTokenAnexoCausaCivil(tokenAnexo);
-  if (!tokenAnexoSecuestrado) {
-    data.anexos_de_la_causa = [];
-  } else {
-    const extractedAnexo = await extractAnexoCausaModal(
-      page,
-      tokenAnexoSecuestrado
-    );
-    data.anexos_de_la_causa = scrapeAnexoCausaModal(extractedAnexo);
-  }
-
-  data.estado_administrativo = cells[3]
-    ?.replace(/^Est\.?\s*Adm\.?:\s*/i, "")
-    .trim();
-  data.proceso = cells[4]?.replace(/^Proc\.?:\s*/i, "").trim();
-  data.ubicacion = cells[5]?.replace(/^Ubicación:\s*/i, "").trim();
-  data.estado_procedimiento = cells[6]
-    ?.replace(/^Estado\s*Proc\.?:\s*/i, "")
-    .trim();
-  data.etapa = cells[7]?.replace(/^Etapa:\s*/i, "").trim();
-  data.cuadernos = {};
-  return data;
 }
 
 /**
@@ -138,9 +61,8 @@ async function parsearDatosModal(html, preScrapedData, page) {
  * @param {object} preScrapedData Datos pre-scrapeados.
  * @returns {Promise<object>} Datos iniciales del modal y promesas para scrapeo de cuadernos
  */
-async function getDataAndCuadernos(page, modalHtml, TOKEN, preScrapedData) {
-  // parsearDatosModal es async y devuelve una Promise, resolverla aquí
-  // const data = await parsearDatosModal(modalHtml, preScrapedData, page);
+async function getDataAndCuadernos(page, modalHtml, TOKEN) {
+  // (parsearDatosModal eliminado por limpieza de código muerto)
   const $ = load(modalHtml);
 
   const cuadernos = $("#selCuaderno option")
@@ -246,93 +168,9 @@ async function extractInfoNotificacionesReceptor(page, token) {
     );
     return html;
   } catch (err) {
-    logger.error(
+    console.error(
       `[API Fetch Info Notificaciones Receptor] Error final en page.request: ${err.message}`
     );
-    sumToMetadata("info_notificaciones_receptor_fallidos", 1);
-    return null;
-  }
-}
-
-/**
- * Función para scrapear anexo de la causa (anexo específico)
- * @param {string} html HTML del modal de anexos
- * @returns {Array} Datos extraídos del modal.
- */
-function scrapeAnexoCausaModal(html) {
-  const $ = load(html);
-
-  const keys = $(".modal-body table thead tr th")
-    .map((_, el) => normalizeString($(el).text().trim()))
-    .get();
-
-  const data = [];
-
-  $(".modal-body table tbody tr").each((_, row) => {
-    const rowData = {};
-    $(row)
-      .find("td")
-      .each((colIndex, el) => {
-        const key = keys[colIndex];
-        if ($(el).find("form").length > 0) {
-          const url = $(el).find("form").attr("action") || "";
-          const value = $(el).find("input").attr("value") || "";
-          const fileType = $(el).find("input").attr("name") || "";
-          const fullUrl = `https://oficinajudicialvirtual.pjud.cl/${url}?${fileType}=${value}`;
-          rowData[key] = fullUrl;
-        } else {
-          const value = $(el).text().trim();
-          rowData[key] = value;
-        }
-      });
-    data.push(rowData);
-  });
-  return data;
-}
-
-/**
- * Función para extraer el HTML del modal de anexos (específico de anexos) de una causa civil.
- * Implementa reintentos en caso de fallo.
- * @param {Object} page - Instancia de Playwright Page.
- * @param {string} tokenAnexo - Valor del token específico para la petición.
- * @returns {Promise<string|null>} HTML del modal de anexos o null en caso de error.
- */
-async function extractAnexoCausaModal(page, tokenAnexo) {
-  const URL =
-    "https://oficinajudicialvirtual.pjud.cl/ADIR_871/civil/modal/anexoCausaCivil.php";
-  const params = new URLSearchParams();
-  params.append("dtaAnexCau", tokenAnexo);
-
-  try {
-    const html = await retry(
-      async () => {
-        const response = await page.request.post(URL, {
-          data: params.toString(),
-          headers: {
-            "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-            "Cache-Control": "no-cache",
-          },
-          timeout: 15000,
-        });
-
-        if (!response.ok()) {
-          logger.warn(
-            `[API Fetch Anexo] Respuesta no OK: ${response.status()}. Reintentando...`
-          );
-          throw new Error(`Respuesta no OK del servidor: ${response.status()}`);
-        }
-        return await response.text();
-      },
-      3,
-      1000
-    );
-
-    return html;
-  } catch (err) {
-    logger.error(
-      `[API Fetch Modal Anexo Causa] Error final en page.request: ${err.message}`
-    );
-    setMetadata("modal_anexo_de_la_causa", "fallido");
     return null;
   }
 }
@@ -345,52 +183,35 @@ async function extractAnexoCausaModal(page, tokenAnexo) {
  * @param {number} index - Índice del caso en la lista (para logging).
  * @returns {Promise<Object|null>} Objeto con data completa del caso, incluyendo cuadernos scrapeados.
  */
-export async function scrapeModalTask(page, casoData, TOKEN, index) {
-  const logPrefix = `[Modal ${index}: ${casoData.rol}]`;
+export async function scrapeModalTask(page, casoData, TOKEN) {
   const idCausaJWT = casoData.modal_token;
   if (!idCausaJWT) {
-    logger.error(`${logPrefix} No se pudo secuestrar el JWT del ID.`);
     return { ...casoData, status: "error", error: "ID_SECUESTRO_FALLIDO" };
   }
 
   // Obtenemos el HTML del Modal de la Causa mediante petición
   const modalHtml = await extractModal(page, idCausaJWT, TOKEN);
   if (!modalHtml) {
-    logger.warn(`${logPrefix} No se obtuvo HTML del modal. Saltando.`);
     return { ...casoData, status: "error", error: "MODAL_HTML_VACIO" };
   }
 
-  // Ahora extraemos la data del modal y los cuadernos
   const result = await getDataAndCuadernos(page, modalHtml, TOKEN, casoData);
-  // if (!result || !result.data) {
   if (!result) {
-    logger.warn(`${logPrefix} No se pudo obtener data/cuadernos. Saltando.`);
     return null;
   }
 
   // refiriendonos a cuadernos
   const data = { cuadernos: {}, info_notificaciones_receptor: [] };
-  // const { data, cuadernosPromise } = result;
   const { cuadernosPromise, info_notificaciones_receptor } = result;
-  // logger.info(`${logPrefix} Iniciando scrapeo de proceso "${data.proceso}"`);
-  logger.info(`${logPrefix} Iniciando scrapeo de proceso "${casoData.id}"`);
 
-  // los cuadernos vienen como promesa, esperamos a que TODAS se resuelvan
   const cuadernos = await Promise.all(cuadernosPromise);
-  logger.info(`${logPrefix} Obtenidos ${cuadernos.length} cuadernos.`);
-  logger.info("Ejecutando scrapeo de cuadernos...");
 
-  // Paralelizamos el scrapeo de cada cuaderno
   const scrapeoPromises = cuadernos.map(async ({ cuaderno, html }) => {
     if (html) {
       // ahora hacemos efectivo el scrapeo de las tablas del cuaderno
       const scrapedData = await scrapTablas(page, html, casoData);
-      logger.info(`${logPrefix} Cuaderno "${cuaderno}" scrapeado.`);
       return { cuaderno, scrapedData };
     } else {
-      logger.warn(
-        `${logPrefix} No se pudo obtener HTML para el cuaderno "${cuaderno}"`
-      );
       return null;
     }
   });
@@ -402,10 +223,7 @@ export async function scrapeModalTask(page, casoData, TOKEN, index) {
     }
   });
   data.info_notificaciones_receptor = await info_notificaciones_receptor;
-
-  logger.info(`${logPrefix} Scraping del caso completado.`);
-
-  return { data };
+  return data;
 }
 
 /**
@@ -469,10 +287,6 @@ export async function scrapTablas(page, html) {
               const value = $(formElement).find("input").attr("value") || "";
               const fileType = $(formElement).find("input").attr("name") || "";
               const url = `https://oficinajudicialvirtual.pjud.cl/${rawUrl}?${fileType}=${value}`;
-              logToFile({
-                message: `Archivo generado en URL: ${url}`,
-                type: "debug",
-              });
               archivos.push({
                 name: crypto.randomUUID(),
                 url,
@@ -512,34 +326,23 @@ export async function scrapTablas(page, html) {
       if (rowData.folio || rowData.fec_tramite || rowData.desc_tramite) {
         // normalizamos fec_tramite
         rowData.fec_tramite = String(rowData.fec_tramite.split(" ")[0]);
-        const hash = movimientoHash({
-          desc_tramite: String(rowData.desc_tramite),
-          folio: String(rowData.folio),
-          fecha_movimiento: String(rowData.fec_tramite),
-        });
 
-        if (!hasHash(hash)) {
-          // El movimiento es nuevo, procesar los anexos pendientes
-          for (const { key: cellKey, tokens } of anexoTokensPendientes) {
-            const anexos = [];
+        // El movimiento es nuevo, procesar los anexos pendientes
+        for (const { key: cellKey, tokens } of anexoTokensPendientes) {
+          const anexos = [];
 
-            for (const token of tokens) {
-              const anexoHtml = await extractAnexoModal(page, token);
-              if (anexoHtml) {
-                const anexoData = await scrapDataFromAnexo(anexoHtml);
-                anexos.push(anexoData);
-              }
+          for (const token of tokens) {
+            const anexoHtml = await extractAnexoModal(page, token);
+            if (anexoHtml) {
+              const anexoData = await scrapDataFromAnexo(anexoHtml);
+              anexos.push(anexoData);
             }
-
-            rowData[cellKey] = anexos;
           }
 
-          _tableData.push(rowData);
-          sumToMetadata("movimientos_procesados", 1);
-        } else {
-          // El movimiento ya existe, no procesar anexos
-          sumToMetadata("movimientos_omitidos", 1);
+          rowData[cellKey] = anexos;
         }
+
+        _tableData.push(rowData);
       } else {
         // No es un movimiento con folio/tramite, agregar directamente
         // Si hay anexos pendientes, procesarlos de todas formas
@@ -563,99 +366,4 @@ export async function scrapTablas(page, html) {
     tablas[key] = _tableData;
   }
   return tablas;
-}
-
-/**
- * Función para extraer el HTML del modal de anexos; específico de un registro de "Historia" de una causa civil.
- * Implementa reintentos en caso de fallo.
- * @param {Object} page - Instancia de Playwright Page.
- * @param {string} val - Valor del token específico para la petición.
- * @returns {Promise<string|null>} HTML del modal de anexos o null en caso de error.
- */
-export async function extractAnexoModal(page, val) {
-  const URL =
-    "https://oficinajudicialvirtual.pjud.cl/ADIR_871/civil/modal/anexoCausaSolicitudCivil.php";
-  const params = new URLSearchParams();
-  params.append("dtaCausaAnex", val);
-
-  try {
-    const html = await retry(
-      async () => {
-        const response = await page.request.post(URL, {
-          data: params.toString(),
-          headers: {
-            "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-            "Cache-Control": "no-cache",
-          },
-          timeout: 15000,
-        });
-
-        if (!response.ok()) {
-          logger.warn(
-            `[API Fetch Anexo] Respuesta no OK: ${response.status()}. Reintentando...`
-          );
-          throw new Error(`Respuesta no OK del servidor: ${response.status()}`);
-        }
-        return await response.text();
-      },
-      3,
-      1000
-    );
-
-    return html;
-  } catch (err) {
-    logger.error(
-      `[API Fetch Anexo] Error final en page.request: ${err.message}`
-    );
-    sumToMetadata("anexos_fallidos", 1);
-    return null;
-  }
-}
-
-/**
- * Función para scrapear información del anexo.
- * @param {string} html - HTML del modal de anexos.
- * @returns {Promise<Object>} Datos extraídos del modal.
- */
-export async function scrapDataFromAnexo(html) {
-  const $ = load(html);
-  const data = {};
-  const headersKeys = [];
-
-  $(".modal-body table thead tr th").each((_, headerElement) => {
-    const $header = $(headerElement);
-    const key = normalizeString($header.text().trim());
-    headersKeys.push(key);
-    data[key] = "";
-  });
-
-  $(".modal-body table tbody tr td").each((index, cellElement) => {
-    const $cell = $(cellElement);
-    const key = headersKeys[index];
-    if (!key) return;
-
-    if ($cell.find("form").length > 0) {
-      const archivos = [];
-      $cell.find("form").each((_, formElement) => {
-        const rawUrl = $(formElement).attr("action") || "";
-        const value = $(formElement).find("input").attr("value") || "";
-        const fileType = $(formElement).find("input").attr("name") || "";
-        const url = `https://oficinajudicialvirtual.pjud.cl/${rawUrl}?${fileType}=${value}`;
-        // logger.debug(`Anexo generado en URL: ${url}`);
-        logToFile({ message: `Anexo generado en URL: ${url}`, type: "debug" });
-        // Marcar archivos de anexo que necesitan Playwright (requieren sesión)
-        archivos.push({
-          name: crypto.randomUUID(),
-          url,
-          type: "anexo",
-          requiresSession: true,
-        });
-      });
-      data[key] = archivos;
-    } else {
-      data[key] = $cell.text().trim();
-    }
-  });
-
-  return data;
 }

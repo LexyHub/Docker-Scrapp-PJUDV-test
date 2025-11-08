@@ -1,8 +1,3 @@
-// estas funciones son basicamente para secuestrar tokens que se crean por sesion del navegadior
-// de momento no son tokens de autorizacion (son JWT igualmente) sino que son tokens que te validan como guest en el sistema
-// y te permite interactuar con el servidor
-// es esencial estas funciones pq nos ahorran muchas interacciones en el navegador
-
 /**
  * Función para secuestrar el token de sesión anónima de la página.
  * @param {*} func Función (en formato String) desde donde extraer el token. Revisar implementación.
@@ -21,17 +16,6 @@ export function secuestrarToken(func) {
 export function secuestrarFuncToken(func) {
   const m = func.match(/anexoSolicitudCivil\s*\(['"]([^'"]+)['"]\)/);
   return m ? m[1] : null;
-}
-
-/**
- * Función para secuestrar el token de la página de resultados de informes tributarios.
- * @param {*} func
- * @returns {string|null} Token extraído o null si no se encuentra.
- */
-export function secuestrarPaginaRit(func) {
-  if (!func) return null;
-  const regex = /paginaRit(?:Sig|Ant)?\s*\('([^']+)'\s*,\s*\d+\s*\)/;
-  return regex.exec(func)?.[1] || null;
 }
 
 /**

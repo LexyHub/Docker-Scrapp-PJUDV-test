@@ -1,4 +1,3 @@
-import { logger } from "../config/logs.js";
 import { delay } from "../utils/core.js";
 
 /**
@@ -14,14 +13,14 @@ export async function retry(asyncFn, maxRetries = 3, baseDelay = 2000) {
       return await asyncFn(); // Éxito, retorna el resultado
     } catch (error) {
       if (attempt >= maxRetries) {
-        logger.error(
+        console.error(
           `[RETRY] Fallo final en intento ${attempt}/${maxRetries}: ${error.message}`
         );
         throw error; // Lanza el error final
       }
 
       const delayTime = baseDelay * attempt; // 2s, 4s, 6s...
-      logger.warn(
+      console.warn(
         `[RETRY] Intento ${attempt}/${maxRetries} falló: ${
           error.message
         }. Reintentando en ${delayTime / 1000}s...`
