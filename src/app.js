@@ -1,8 +1,10 @@
 import { Hono } from "hono";
+import { cors } from "hono/cors";
 import { serve } from "@hono/node-server";
-import { getCausa } from "./index.js";
+import { getCausa } from "./logic/getCausa.js";
 
 const app = new Hono();
+app.use("*", cors());
 
 app.post("/obtener-causa", async (c) => {
   const body = await c.req.json();

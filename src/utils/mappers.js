@@ -7,16 +7,20 @@ import { TRIBUNALES } from "../constants/tribunales.js";
  * @returns caso formateado
  */
 export function transformCaso(caso) {
-  const conCorte = CORTES[caso["corte"]] || 0;
-  const conTribunal = TRIBUNALES[caso["tribunal"]] || 0;
-
+  // const conCorte = CORTES[caso["corte"]] || 0;
+  // const conTribunal = TRIBUNALES[caso["tribunal"]] || 0;
   return {
     conEraCausa: parseInt(caso["año"], 10),
     competencia: 3,
-    conCorte: conCorte,
+    // conCorte: conCorte,
+    conCorte: parseInt(caso["corte"]) || 0,
     conTipoCausa: caso["libro"] || "",
-    conRolCausa: parseInt(caso["rol"], 10),
-    conTribunal: conTribunal,
+    conRolCausa: parseInt(caso["rol"]) || 0,
+    // conTribunal: conTribunal,
+    conTribunal: parseInt(caso["tribunal"]) || 0,
+    conTipoBusApe: 0,
+    "radio-groupPenal": 1,
+    "radio-group": 1,
     ruc1: "",
     ruc2: "",
     rucPen1: "",

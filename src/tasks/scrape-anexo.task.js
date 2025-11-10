@@ -1,3 +1,7 @@
+import { normalizeString } from "../utils/core.js";
+import { retry } from "../utils/retry.js";
+import { load } from "cheerio";
+
 /**
  * Función para extraer el HTML del modal de anexos; específico de un registro de "Historia" de una causa civil.
  * Implementa reintentos en caso de fallo.

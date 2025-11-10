@@ -1,4 +1,7 @@
-import { chromium } from "playwright";
+import { getBrowser } from "../tasks/browser-manager.task.js";
+
+const userAgent =
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36 OPR/122.0.0.0";
 
 /**
  * Crea una instancia de navegador (SOLO EL BROWSER).
@@ -7,16 +10,12 @@ import { chromium } from "playwright";
  * @returns {Promise<Object>} - La instancia del navegador.
  */
 export async function createBrowserInstance(tryHeadless = true) {
-  let browser;
-  const userAgent =
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36 OPR/122.0.0.0";
-  try {
-    browser = await chromium.launch({ headless: tryHeadless, devtools: true });
+  const browser = await getBrowser();
 
-    const context = await browser.newContext({
-      userAgent,
-    });
-    const page = await context.newPage();
+  const context = await browser.newContext({ userAgent });
+  const page = await context.newPage();
+
+  try {
     await page.goto("https://oficinajudicialvirtual.pjud.cl/home/", {
       timeout: 30000,
     });
@@ -31,20 +30,12 @@ export async function createBrowserInstance(tryHeadless = true) {
       timeout: 30000,
     });
 
-    console.info("Página principal cargada y lista.");
+    console.info("[createBrowserInstance] Página principal lista.");
 
     return { browser, context, page };
   } catch (error) {
-    if (browser) await browser.close();
-
-    if (error.name === "TimeoutError" && tryHeadless) {
-      console.warn(
-        "Timeout en modo headless. Reintentando en modo normal (con GUI)..."
-      );
-      return createBrowserInstance(false);
-    } else {
-      console.error("No se pudo iniciar el browser:", error.message);
-      throw error;
-    }
+    console.error("[createBrowserInstance] Error inicializando página:", error);
+    await context.close();
+    throw error;
   }
 }

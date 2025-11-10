@@ -272,7 +272,9 @@ export async function scrapTablas(page, html) {
         const hasChildElement = $cell.find("*").length > 0;
 
         if (!hasChildElement) {
-          rowData[key] = $cell.text().trim();
+          rowData[key] = ["anexo", "doc"].includes(key)
+            ? null
+            : $cell.text().trim();
         } else {
           const isAnexo =
             $cell.find("a[href*='modalAnexoSolicitudCivil']").length > 0;
@@ -317,7 +319,9 @@ export async function scrapTablas(page, html) {
             // Inicializar con array vacío por ahora
             rowData[key] = [];
           } else {
-            rowData[key] = $cell.text().trim();
+            rowData[key] = ["anexo", "doc"].includes(key)
+              ? null
+              : $cell.text().trim();
           }
         }
       }

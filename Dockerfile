@@ -1,24 +1,30 @@
 FROM node:23.11.0-slim
 
+# Instalar pnpm globalmente
 RUN npm install -g pnpm@10.17.0
 
 WORKDIR /app
 
+# Copiar archivos de dependencias
 COPY package.json pnpm-lock.yaml ./
 
+# Instalar dependencias
 RUN pnpm install --frozen-lockfile
 
-# Si quieremos instalarlos todos usamos este de acam abajo
-# RUN pnpm playwright install --with-deps
-# Para solo el que usare q es chormium
-RUN pnpm playwright install --with-deps chromium
+# Establecer la ruta de Playwright en una ubicación accesible
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 
+# Instalar navegadores Playwright con dependencias del sistema (como root)
+RUN pnpm exec playwright install --with-deps chromium
+
+# Copiar el resto del código
 COPY . .
 
-# Crear los directorios necesarios y dar permisos
-RUN mkdir -p data/cases data/downloads && \
-    chown -R node:node /app
+# Dar permisos al usuario node
+RUN chown -R node:node /app && \
+    chmod -R 755 /ms-playwright
 
+# Cambiar a usuario node
 USER node
 
-CMD ["node", "src/index.js"]
+CMD ["pnpm", "start"]
