@@ -122,6 +122,7 @@ export async function scrapeCausaTask(page, formData, index, causaId) {
         },
         { url, parsedFormData, pagina: paginaToken }
       );
+      sumToMetadata("requests", 1);
 
       requestCount++; // Incrementar contador después de cada petición
 

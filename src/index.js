@@ -19,9 +19,10 @@ import { DATA_DIR, DOWNLOADS_DIR } from "./constants/directories.js";
 import { promises as fs } from "fs";
 import path from "path";
 import { getAllHashes } from "./services/hash.service.js";
+import db from "./services/db.service.js";
 
 let TOKEN;
-const BD_LIMIT = 50; // Sólo para probar benchmarking
+const BD_LIMIT = 500; // Sólo para probar benchmarking
 
 async function main() {
   await createFoldersIfNotExists();
@@ -41,7 +42,7 @@ async function main() {
   setMetadata("total_casos", casos.length);
   logger.info(`Causas obtenidas: ${casos.length}`);
 
-  const { browser, context, page } = await createBrowserInstance(false);
+  const { browser, context, page } = await createBrowserInstance(true);
   logger.info("Página principal cargada y lista.");
 
   // Secuestrar TOKEN global
@@ -201,9 +202,23 @@ async function main() {
 
   exportLogs();
 
-  // await browser.close();
+  // Cerrar el navegador y contexto
+  logger.info("Cerrando navegador...");
   await context.close();
   await browser.close();
+  logger.info("Navegador cerrado.");
+
+  // Cerrar el pool de base de datos
+  logger.info("Cerrando conexión a base de datos...");
+  await db.close();
+  logger.info("Conexión a base de datos cerrada.");
+
+  // Forzar salida del proceso
+  logger.info("Proceso completado. Saliendo...");
+  process.exit(0);
 }
 
-main();
+main().catch((error) => {
+  logger.error("Error fatal en main:", error);
+  process.exit(1);
+});

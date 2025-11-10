@@ -19,7 +19,8 @@ export async function createBrowserInstance(tryHeadless = true) {
 
     const context = await browser.newContext({
       userAgent,
-      recordHar: { path: "data/network.har", content: "embed" },
+      // recordHar deshabilitado para evitar que el proceso quede colgado
+      // recordHar: { path: "data/network.har", content: "embed" },
     });
     const page = await context.newPage();
     logger.info(`Browser iniciado con éxito.`);

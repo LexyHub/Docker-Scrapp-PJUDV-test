@@ -4,7 +4,6 @@ import https from "https";
 import { promises as promiseFs } from "fs";
 import fs from "fs";
 import path from "path";
-import crypto from "crypto";
 import pLimit from "p-limit";
 
 /**
@@ -178,7 +177,7 @@ export function collectFileTasks(
  * @param {number} timeout Tiempo máximo de espera para la descarga
  * @returns {Promise<string>} Promesa que se resuelve con la ruta del archivo descargado
  */
-function descargarPDFStream(url, rutaSalida, timeout = 15000) {
+function descargarPDFStream(url, rutaSalida, timeout = 60000) {
   return new Promise((resolve, reject) => {
     const dir = path.dirname(rutaSalida);
     if (!fs.existsSync(dir)) {
@@ -249,7 +248,7 @@ function descargarPDFStream(url, rutaSalida, timeout = 15000) {
  * @param {number} timeout Tiempo máximo de espera para la descarga
  * @returns {Promise<string>} Promesa que se resuelve con la ruta del archivo descargado
  */
-async function descargarConPlaywright(page, url, rutaSalida, timeout = 30000) {
+async function descargarConPlaywright(page, url, rutaSalida, timeout = 60000) {
   const dir = path.dirname(rutaSalida);
   await promiseFs.mkdir(dir, { recursive: true });
 

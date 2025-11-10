@@ -39,6 +39,7 @@ async function extractModal(page, tokenCausa, tokenGlobal) {
           },
           timeout: 60000,
         });
+        sumToMetadata("requests", 1);
         if (!response.ok()) {
           throw new Error(`Respuesta no OK: ${response.status()}`);
         }
@@ -234,8 +235,9 @@ async function extractInfoNotificacionesReceptor(page, token) {
             "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
             "Cache-Control": "no-cache",
           },
-          timeout: 15000,
+          timeout: 40000,
         });
+        sumToMetadata("requests", 1);
         if (!response.ok()) {
           throw new Error(`Respuesta no OK: ${response.status()}`);
         }
@@ -312,8 +314,9 @@ async function extractAnexoCausaModal(page, tokenAnexo) {
             "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
             "Cache-Control": "no-cache",
           },
-          timeout: 15000,
+          timeout: 40000,
         });
+        sumToMetadata("requests", 1);
 
         if (!response.ok()) {
           logger.warn(
@@ -534,11 +537,14 @@ export async function scrapTablas(page, html) {
             rowData[cellKey] = anexos;
           }
 
-          _tableData.push(rowData);
+          _tableData.push({ ...rowData, hash });
           sumToMetadata("movimientos_procesados", 1);
         } else {
           // El movimiento ya existe, no procesar anexos
           sumToMetadata("movimientos_omitidos", 1);
+          logToFile({
+            message: `Movimiento con Hash ${hash} omitido; información del movimiento: folio: ${rowData.folio}; fecha: ${rowData.fec_tramite}; descripción: ${rowData.desc_tramite}`,
+          });
         }
       } else {
         // No es un movimiento con folio/tramite, agregar directamente
@@ -587,8 +593,9 @@ export async function extractAnexoModal(page, val) {
             "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
             "Cache-Control": "no-cache",
           },
-          timeout: 15000,
+          timeout: 40000,
         });
+        sumToMetadata("requests", 1);
 
         if (!response.ok()) {
           logger.warn(
