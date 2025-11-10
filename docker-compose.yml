@@ -1,7 +1,8 @@
 services:
   pjud-scraper:
     build: .
-    container_name: pjud-scraper
+    image: pjud-scraper:v0.1-gamma
+    container_name: pjud-scraper-v0.1-gamma
     ports:
       - "3000:3000"
     environment:
