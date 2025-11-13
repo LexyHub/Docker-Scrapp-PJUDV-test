@@ -1,17 +1,19 @@
 services:
-  pjud-scraper:
-    build: .
-    image: pjud-scraper:v0.1-gamma
-    container_name: pjud-scraper-v0.1-gamma
+  backend:
+    build:
+      context: ./back-end
+      dockerfile: ../Dockerfile.backend
+    container_name: pjud-backend
     ports:
       - "3000:3000"
     environment:
-      # Configuración para Playwright en Docker
       - NODE_ENV=production
-    # env_file:
-    #   - .env
+      - PORT=3000
+    env_file:
+      - ./back-end/.env
     restart: unless-stopped
-    # Límites de recursos (ajustar segun necesidad)
+    networks:
+      - pjud-network
     deploy:
       resources:
         limits:
@@ -19,5 +21,33 @@ services:
           memory: 2G
         reservations:
           memory: 512M
-    # volumes:
-    #   - ./data:/app/data
+
+  frontend:
+    build:
+      context: ./front-end
+      dockerfile: ../Dockerfile.frontend
+    container_name: pjud-frontend
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./front-end:/app
+      - /app/node_modules
+    environment:
+      - NODE_ENV=development
+      - VITE_API_URL=http://backend:3000
+    restart: unless-stopped
+    depends_on:
+      - backend
+    networks:
+      - pjud-network
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 1G
+        reservations:
+          memory: 256M
+
+networks:
+  pjud-network:
+    driver: bridge

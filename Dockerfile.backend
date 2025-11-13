@@ -27,4 +27,7 @@ RUN chown -R node:node /app && \
 # Cambiar a usuario node
 USER node
 
+# Exponer el puerto de la API
+EXPOSE 3000
+
 CMD ["pnpm", "start"]

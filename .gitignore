@@ -1,37 +1,32 @@
-# Dependencias
-node_modules/
-.pnpm-debug.log
-.npm
-.yarn
-
-# Variables de entorno
-.env
-.env.*
-
 # Logs
+logs
 *.log
-logs/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
+lerna-debug.log*
 
-# Sistema operativo
+node_modules
+dist
+dist-ssr
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
 .DS_Store
-Thumbs.db
-desktop.ini
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
 
-# Editor
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
-
-# Playwright
-playwright-report/
-test-results/
-playwright/.cache/
-
-# Datos generados por el scraper
-data/*
+# proyectos en si
+/data/
+/back-end/node_modules
+/back-end/dist
+/back-end/.env
+/back-end/data*
+/front-end/node_modules
