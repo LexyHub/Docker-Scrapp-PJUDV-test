@@ -14,8 +14,11 @@ export async function getData({
   tribunal,
 }: GetDataServiceProps) {
   try {
-    const data = await fetch("http://localhost:3000/obtener-causa", {
+    const data = await fetch("/api/obtener-causa", {
       method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
       body: JSON.stringify({ libro, rol, año, corte, tribunal }),
     });
     const json = await data.json();

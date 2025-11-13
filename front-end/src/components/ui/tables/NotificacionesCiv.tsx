@@ -8,6 +8,7 @@ import {
 } from "@/components/base/table";
 import useDataStore from "@/stores/data.store";
 import { CellValue } from "./CellValue";
+import { generateUniqueId } from "@/lib/utils";
 
 interface Props {
   cuaderno: string;
@@ -52,7 +53,7 @@ export function NotificacionesCiv({ cuaderno }: Props) {
           </TableRow>
         ) : (
           rows?.map((item) => (
-            <TableRow key={crypto.randomUUID()}>
+            <TableRow key={generateUniqueId()}>
               {HEADERS.map((header) => (
                 <TableCell
                   key={header}
