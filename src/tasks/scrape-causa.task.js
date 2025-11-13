@@ -1,6 +1,8 @@
 import { logger, logToFile } from "../config/logs.js";
+import { sumToMetadata } from "../services/metadata.service.js";
 import { transformCaso } from "../utils/mappers.js";
 import { parsearPaginaConCheerio } from "./scrape-cheerio.task.js";
+import { delay } from "../utils/core.js";
 
 const _URLS = {
   1: "https://oficinajudicialvirtual.pjud.cl/ADIR_871/suprema/consultaRitSuprema.php",
@@ -13,8 +15,8 @@ const _URLS = {
 
 // Configuración de rate limiting
 const RATE_LIMIT_CONFIG = {
-  requestsPerBatch: 10, // Número de peticiones antes de hacer una pausa
-  delayMs: 20, // Delay en milisegundos después de cada lote
+  requestsPerBatch: 15, // Número de peticiones antes de hacer una pausa
+  delayMs: 60, // Delay en milisegundos después de cada lote
 };
 
 /**
@@ -109,7 +111,7 @@ export async function scrapeCausaTask(page, formData, index, causaId) {
             });
 
             if (!response.ok)
-              throw new Error(`HTTP ${response.status()} en ${data.url}`);
+              throw new Error(`HTTP ${response.status} en ${data.url}`);
 
             const html = await response.text();
             return html;
@@ -134,11 +136,9 @@ export async function scrapeCausaTask(page, formData, index, causaId) {
       }
 
       logToFile({
-        message: `Respuesta HTML recibida para página token: ${paginaToken}`,
-        type: "debug",
-      });
-      logToFile({
-        message: html,
+        message: `Respuesta HTML recibida para página token: ${paginaToken}: ${
+          html ? "OK" : "EMPTY"
+        }`,
         type: "debug",
       });
 

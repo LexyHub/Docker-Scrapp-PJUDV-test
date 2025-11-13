@@ -123,10 +123,10 @@ async function main() {
 
   const fase3End = new Date().getTime();
   setMetadata("tiempo_fase_3", `${(fase3End - fase3Start) / 1000}s`);
-  logger.info("--- Etapa 3 Completada ---");
   logger.info(
     `Se recolectaron ${allFileTasks.length} archivos para descarga local y ${allCeleryTasks.length} archivos para descarga en Celery.`
   );
+  logger.info("--- Etapa 3 Completada ---");
 
   //fase 4: descarga de archivos
   // console.clear();
@@ -202,23 +202,10 @@ async function main() {
 
   exportLogs();
 
-  // Cerrar el navegador y contexto
-  logger.info("Cerrando navegador...");
   await context.close();
   await browser.close();
-  logger.info("Navegador cerrado.");
-
-  // Cerrar el pool de base de datos
-  logger.info("Cerrando conexión a base de datos...");
   await db.close();
-  logger.info("Conexión a base de datos cerrada.");
-
-  // Forzar salida del proceso
-  logger.info("Proceso completado. Saliendo...");
   process.exit(0);
 }
 
-main().catch((error) => {
-  logger.error("Error fatal en main:", error);
-  process.exit(1);
-});
+main();

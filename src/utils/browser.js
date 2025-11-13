@@ -15,7 +15,7 @@ export async function createBrowserInstance(tryHeadless = true) {
     logger.info(
       `Iniciando browser en modo ${tryHeadless ? "headless" : "normal"}...`
     );
-    browser = await chromium.launch({ headless: tryHeadless, devtools: true });
+    browser = await chromium.launch({ headless: tryHeadless });
 
     const context = await browser.newContext({
       userAgent,
