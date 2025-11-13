@@ -5,10 +5,12 @@ services:
     volumes:
       # Persistir los datos descargados
       - ./data:/app/data
+    # Cargar variables de entorno desde el archivo .env en la raíz del proyecto
+    env_file:
+      - .env
     environment:
       # Configuración para Playwright en Docker
       - NODE_ENV=production
-    restart: unless-stopped
     # Si necesitas límites de recursos, descomenta y ajusta:
     # deploy:
     #   resources:

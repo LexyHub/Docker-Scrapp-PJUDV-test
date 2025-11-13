@@ -22,7 +22,7 @@ import { getAllHashes } from "./services/hash.service.js";
 import db from "./services/db.service.js";
 
 let TOKEN;
-const BD_LIMIT = 500; // Sólo para probar benchmarking
+const BD_LIMIT = 200; // Sólo para probar benchmarking
 
 async function main() {
   await createFoldersIfNotExists();
