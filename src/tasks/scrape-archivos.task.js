@@ -347,21 +347,19 @@ async function descargarArchivoConReintentos(
     // Logging detallado según el tipo de error
     if (error.message.includes("403") || error.message.includes("401")) {
       logger.error(
-        `${logPrefix} 🚫 HTTP ${
+        `${logPrefix} HTTP ${
           error.message.match(/\d{3}/)?.[0] || "403/401"
-        } - Acceso denegado | URL: ${url.substring(0, 100)}`
+        } - Acceso denegado | URL: ${url}`
       );
       sumToMetadata("descargas_403_401", 1);
     } else if (
       error.message.includes("Timeout") ||
       error.message.includes("timeout")
     ) {
-      logger.error(`${logPrefix} ⏱️  TIMEOUT | URL: ${url.substring(0, 100)}`);
+      logger.error(`${logPrefix} TIMEOUT | URL: ${url}`);
       sumToMetadata("descargas_timeout", 1);
     } else {
-      logger.error(
-        `${logPrefix} ❌ ${error.message} | URL: ${url.substring(0, 100)}`
-      );
+      logger.error(`${logPrefix} ${error.message} | URL: ${url}`);
     }
     return false;
   }

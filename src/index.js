@@ -23,7 +23,7 @@ async function main() {
   await createFoldersIfNotExists();
 
   // Configurar rate limiting para scrape-causa (opcional)
-  configureRateLimit({ requestsPerBatch: 10, delayMs: 1000 });
+  configureRateLimit({ requestsPerBatch: 10, delayMs: 4000 });
 
   logger.info("--- Fase 0: Obtención de Casos y Browser ---");
   const casos = await getCausas({ limit: BD_LIMIT, applyHash: true });
