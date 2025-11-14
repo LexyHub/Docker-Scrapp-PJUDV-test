@@ -1,28 +1,19 @@
 import { exportLogs, logger } from "./config/logs.js";
 import { getCausas } from "./services/casos.service.js";
-import {
-  getAllMetadata,
-  setMetadata,
-  sumToMetadata,
-} from "./services/metadata.service.js";
+import { getAllMetadata, setMetadata } from "./services/metadata.service.js";
 import { createBrowserInstance } from "./utils/browser.js";
 import { createFoldersIfNotExists, normalizeString } from "./utils/core.js";
-import { CONCURRENCIA_LIMIT } from "./constants/limits.js";
-import {
-  scrapeCausaTask,
-  configureRateLimit,
-} from "./tasks/scrape-causa.task.js";
-import { retry } from "./utils/retry.js";
-import { scrapeModalTask } from "./tasks/scrape-modal.task.js";
+import { configureRateLimit } from "./tasks/scrape-causa.task.js";
 import { secuestrarToken } from "./utils/tokens.js";
+import { ejecutarFaseDescargas } from "./tasks/scrape-descargas.task.js";
+import { ejecutarFaseCausas } from "./tasks/scrape-fase1.task.js";
 import {
-  collectFileTasks,
-  descargarArchivosConBatching,
-} from "./tasks/scrape-archivos.task.js";
+  ejecutarFaseModales,
+  ejecutarFaseGuardado,
+} from "./tasks/scrape-fase2.task.js";
+import { ejecutarFaseRecoleccion } from "./tasks/scrape-fase3.task.js";
 import { DATA_DIR, DOWNLOADS_DIR } from "./constants/directories.js";
 import { promises as fs } from "fs";
-import path from "path";
-import { getAllHashes } from "./services/hash.service.js";
 import db from "./services/db.service.js";
 
 let TOKEN;
@@ -32,7 +23,7 @@ async function main() {
   await createFoldersIfNotExists();
 
   // Configurar rate limiting para scrape-causa (opcional)
-  configureRateLimit({ requestsPerBatch: 15, delayMs: 500 });
+  configureRateLimit({ requestsPerBatch: 10, delayMs: 1000 });
 
   logger.info("--- Fase 0: Obtención de Casos y Browser ---");
   const casos = await getCausas({ limit: BD_LIMIT, applyHash: true });
@@ -57,143 +48,47 @@ async function main() {
 
   // const casos = rawCasos.map(transformCaso);
 
-  logger.info(`Iniciando ${casos.length} tareas...`);
+  logger.info(`Iniciando procesamiento de ${casos.length} causas...`);
   const initialTiming = new Date().getTime();
 
-  // Fase 1: obtencion de data de tabla
-  logger.info("--- Etapa 1: Task de Scraping de Causas ---");
-  logger.info(
-    "Iniciando tareas concurrentes con límite de:",
-    CONCURRENCIA_LIMIT.concurrency
-  );
-  logger.info(`Total de HASHES: ${getAllHashes().length}`);
-  sumToMetadata("movimientos_por_procesar", getAllHashes().length);
-  const fase1Start = new Date().getTime();
-  const tasksTabla = casos.map((formData, index) => {
-    const causaId = crypto.randomUUID();
+  // Fase 1: Scraping de causas
+  const todosLosCasos = await ejecutarFaseCausas(page, casos);
 
-    return CONCURRENCIA_LIMIT(() =>
-      // llenamos los forms y extraemos el caso
-      retry(() => scrapeCausaTask(page, formData, index + 1, causaId), 3, 2000)
-    );
-  });
-  const resultadosTablas = await Promise.all(tasksTabla);
-  const todosLosCasos = resultadosTablas
-    .filter((r) => r !== null && r.data)
-    .flatMap((r) => r.data);
-  const fase1End = new Date().getTime();
-  setMetadata("tiempo_fase_1", `${(fase1End - fase1Start) / 1000}s`);
-  // // console.clear();
-  logger.info("--- Etapa 1 Completada ---");
-  logger.info(`Se obtuvieron ${resultadosTablas.length} resultados de tablas.`);
-  logger.info(
-    `Se realizarán las siguientes tareas ${todosLosCasos.length} casos.`
+  // Fase 2: Scraping de modales (cuadernos, anexos, notificaciones)
+  const casosCompletos = await ejecutarFaseModales(
+    page,
+    todosLosCasos,
+    TOKEN,
+    DATA_DIR,
+    normalizeString
   );
 
-  // Fase 2: obtencion de detalles por cada caso
-  logger.info("--- Etapa 2: Task de Scraping de Detalles (Modales) ---");
-  logger.info(
-    "Iniciando tareas concurrentes con límite de:",
-    CONCURRENCIA_LIMIT.concurrency
-  );
-  const fase2Start = new Date().getTime();
-  const tasksModales = todosLosCasos.map((casoData, index) => {
-    return CONCURRENCIA_LIMIT(() =>
-      retry(() => scrapeModalTask(page, casoData, TOKEN, index + 1), 3, 2000)
-    );
-  });
-  const resultadosFinales = await Promise.all(tasksModales);
-  const casosCompletos = resultadosFinales
-    .filter((r) => r !== null)
-    .map((r) => ({ ...r.data, id: crypto.randomUUID() }));
-  const fase2End = new Date().getTime();
-  setMetadata("tiempo_fase_2", `${(fase2End - fase2Start) / 1000}s`);
-  // console.clear();
-  logger.info("--- Etapa 2 Completada ---");
-  logger.info(`Se completaron ${casosCompletos.length} casos con detalles.`);
-
-  // fase 3: recolecion de archivos
-  // console.clear();
-  logger.info("--- Etapa 3: Recolección de Tareas de Descarga de Archivos ---");
-  const fase3Start = new Date().getTime();
-
-  // Recolectar tareas y separar entre normales y celery
-  const taskResults = casosCompletos.map((caso) => {
-    return collectFileTasks(caso, caso.id, DOWNLOADS_DIR, normalizeString);
-  });
-
-  // Separar las tareas normales de las de celery
-  const allFileTasks = taskResults.flatMap((result) => result.tasks);
-  const allCeleryTasks = taskResults.flatMap((result) => result.celeryTasks);
-
-  const fase3End = new Date().getTime();
-  setMetadata("tiempo_fase_3", `${(fase3End - fase3Start) / 1000}s`);
-  logger.info(
-    `Se recolectaron ${allFileTasks.length} archivos para descarga local y ${allCeleryTasks.length} archivos para descarga en Celery.`
-  );
-  logger.info("--- Etapa 3 Completada ---");
-
-  //fase 4: descarga de archivos
-  // console.clear();
-  logger.info("--- Etapa 4: Descarga de Archivos ---");
-  const fase4Start = new Date().getTime();
-  let estadisticasDescarga = { exitosas: 0, fallidas: 0, total: 0 };
-  const mergedTasks = [...allFileTasks, ...allCeleryTasks];
-  logger.info("Total de archivos a descargar:", mergedTasks.length);
-
-  if (mergedTasks.length > 0) {
-    // Usar el nuevo sistema de descarga con batching y reintentos
-    // Stream es mucho más rápido que Playwright, podemos ser más agresivos
-    estadisticasDescarga = await descargarArchivosConBatching(
-      page,
-      mergedTasks,
-      {
-        concurrencia: 15, // 15 descargas simultáneas con stream
-        batchSize: 50, // 100 archivos por lote
-        delayEntreLotes: 5, // 5ms de espera entre lotes
-        maxReintentos: 2, // 2 reintentos adicionales para archivos fallidos
-      }
-    );
-
-    setMetadata("descargas_de_archivo_exitosas", estadisticasDescarga.exitosas);
-    setMetadata("descargas_de_archivo_fallidas", estadisticasDescarga.fallidas);
-  } else {
-    logger.info("No se encontraron archivos para descargar.");
-  }
-  const fase4End = new Date().getTime();
-  setMetadata("tiempo_fase_4", `${(fase4End - fase4Start) / 1000}s`);
-  logger.info("--- Etapa 4 Completada ---");
-  logger.info(
-    `Tasa de éxito: ${
-      estadisticasDescarga.total > 0
-        ? (
-            (estadisticasDescarga.exitosas / estadisticasDescarga.total) *
-            100
-          ).toFixed(1)
-        : 0
-    }%`
+  // Fase 3: Recolección de tareas de descarga
+  const { allFileTasks, allCeleryTasks } = await ejecutarFaseRecoleccion(
+    casosCompletos,
+    DOWNLOADS_DIR,
+    normalizeString
   );
 
-  // Fase 5 guardar data
-  // console.clear();
-  logger.info("--- Etapa 5: Guardar Datos ---");
-  const fase5Start = new Date().getTime();
-  const trabajosGuardado = casosCompletos.map(async (caso) => {
-    const fileName = caso.id + ".json";
-    const fullPath = path.join(DATA_DIR, fileName);
-    try {
-      await fs.writeFile(fullPath, JSON.stringify(caso, null, 2), "utf-8");
-      logger.info(`Datos guardados para el caso ${caso.id} en ${fullPath}`);
-    } catch (error) {
-      logger.error(
-        `Error al guardar datos para el caso ${caso.id}: ${error.message}`
-      );
-    }
-  });
-  await Promise.allSettled(trabajosGuardado);
-  const fase5End = new Date().getTime();
-  setMetadata("tiempo_fase_5", `${(fase5End - fase5Start) / 1000}s`);
-  logger.info("--- Etapa 5 Completada: Guardar Datos ---");
+  // Fase 4: Descarga de archivos (4A, 4B, 4C)
+  const resultadoDescargas = await ejecutarFaseDescargas(
+    page,
+    allFileTasks,
+    allCeleryTasks
+  );
+
+  setMetadata(
+    "descargas_de_archivo_exitosas",
+    resultadoDescargas.estadisticas.exitosas
+  );
+  setMetadata(
+    "descargas_de_archivo_fallidas",
+    resultadoDescargas.estadisticas.fallidas
+  );
+  setMetadata("tiempo_fase_4", `${resultadoDescargas.duracion.toFixed(1)}s`);
+
+  // Fase 5: Guardar casos completos en archivos JSON
+  await ejecutarFaseGuardado(casosCompletos, DATA_DIR, normalizeString);
 
   // console.clear();
   const finalTiming = new Date().getTime();

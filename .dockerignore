@@ -1,5 +1,11 @@
 # Ignora la carpeta de dependencias. ¡Se instalan DENTRO del contenedor!
 node_modules
+data
+.env
+.git
+.vscode
+dist
+*.log
 
 # Ignora archivos de entorno y secretos
 .env
@@ -13,9 +19,6 @@ node_modules
 # Reportes y cache de Playwright (si los generas localmente)
 playwright-report/
 test-results/
-
-# Archivos de datos (se montan como volumen, no copiar al contenedor)
-data/
 
 # Docker files (no necesarios dentro del contenedor)
 Dockerfile

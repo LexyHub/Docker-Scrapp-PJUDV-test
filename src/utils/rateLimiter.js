@@ -1,8 +1,8 @@
-import { logger } from "../config/logs";
+import { logger } from "../config/logs.js";
 
 let RATE_LIMIT_CONFIG = {
-  requestsPerBatch: 10,
-  delayMs: 100,
+  requestsPerBatch: 15,
+  delayMs: 1000,
 };
 
 let _counter = 0;

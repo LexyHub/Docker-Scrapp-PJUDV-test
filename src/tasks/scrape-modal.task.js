@@ -238,7 +238,7 @@ async function extractInfoNotificacionesReceptor(page, token) {
             "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
             "Cache-Control": "no-cache",
           },
-          timeout: 40000,
+          timeout: 60000, // Aumentado a 60s
         });
         sumToMetadata("requests", 1);
         if (!response.ok()) {
@@ -246,13 +246,13 @@ async function extractInfoNotificacionesReceptor(page, token) {
         }
         return await response.text();
       },
-      3,
-      1000
+      5, // Aumentado a 5 reintentos
+      2000 // Aumentado delay a 2s entre reintentos
     );
     return html;
   } catch (err) {
-    logger.error(
-      `[API Fetch Info Notificaciones Receptor] Error final en page.request: ${err.message}`
+    logger.warn(
+      `[API Fetch Info Notificaciones Receptor] Error tras 5 intentos: ${err.message}`
     );
     sumToMetadata("info_notificaciones_receptor_fallidos", 1);
     return null;
@@ -318,26 +318,26 @@ async function extractAnexoCausaModal(page, tokenAnexo) {
             "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
             "Cache-Control": "no-cache",
           },
-          timeout: 40000,
+          timeout: 60000, // Aumentado a 60s
         });
         sumToMetadata("requests", 1);
 
         if (!response.ok()) {
           logger.warn(
-            `[API Fetch Anexo] Respuesta no OK: ${response.status()}. Reintentando...`
+            `[API Fetch Anexo Causa] Respuesta no OK: ${response.status()}. Reintentando...`
           );
           throw new Error(`Respuesta no OK del servidor: ${response.status()}`);
         }
         return await response.text();
       },
-      3,
-      1000
+      5, // Aumentado a 5 reintentos
+      2000 // Aumentado delay a 2s
     );
 
     return html;
   } catch (err) {
-    logger.error(
-      `[API Fetch Modal Anexo Causa] Error final en page.request: ${err.message}`
+    logger.warn(
+      `[API Fetch Modal Anexo Causa] Error tras 5 intentos: ${err.message}`
     );
     setMetadata("modal_anexo_de_la_causa", "fallido");
     return null;
@@ -598,26 +598,26 @@ export async function extractAnexoModal(page, val) {
             "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
             "Cache-Control": "no-cache",
           },
-          timeout: 40000,
+          timeout: 60000, // Aumentado a 60s
         });
         sumToMetadata("requests", 1);
 
         if (!response.ok()) {
           logger.warn(
-            `[API Fetch Anexo] Respuesta no OK: ${response.status()}. Reintentando...`
+            `[API Fetch Anexo Solicitud] Respuesta no OK: ${response.status()}. Reintentando...`
           );
           throw new Error(`Respuesta no OK del servidor: ${response.status()}`);
         }
         return await response.text();
       },
-      3,
-      1000
+      5, // Aumentado a 5 reintentos
+      2000 // Aumentado delay a 2s
     );
 
     return html;
   } catch (err) {
-    logger.error(
-      `[API Fetch Anexo] Error final en page.request: ${err.message}`
+    logger.warn(
+      `[API Fetch Anexo Solicitud] Error tras 5 intentos: ${err.message}`
     );
     sumToMetadata("anexos_fallidos", 1);
     return null;

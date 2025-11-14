@@ -1,11 +1,30 @@
-import pLimit from "p-limit";
+/**
+ * limitador simple de concurrencia para no saturar memoria con promesas en pending.
+ * @param {number} concurrency Concurrencia máxima permitida.
+ * @returns {function(Function): Promise<any>} Una función que limita la concurrencia de las funciones asíncronas.
+ */
+function createSimpleLimit(concurrency) {
+  let running = 0;
+  const queue = [];
 
-// esto son límites para controlar concurrencia y pjud no watee ni bloquee. Como está ahora mismo está preciso.
-// esto podría mejorar o empeorar el rendimiento dependiendo de la conexión.
-// no es muy util para casos únicos.
-export const DOWNLOAD_LIMIT = pLimit(8); // Cuantos archivos se pueden descargar simultáneamente
-export const CONCURRENT_CASES = pLimit(8); // Cuantos casos se pueden procesar simultáneamente
-export const API_LIMIT = pLimit(4); // Cuantas llamadas a la API se pueden hacer simultáneamente
+  return async (fn) => {
+    while (running >= concurrency) {
+      await new Promise((resolve) => queue.push(resolve));
+    }
+    running++;
+    try {
+      return await fn();
+    } finally {
+      running--;
+      const resolve = queue.shift();
+      if (resolve) resolve();
+    }
+  };
+}
 
-export const CASE_EXTRACTION_LIMIT = pLimit(10); // Aumentado de 10 a 20 para cuadernos más rápidos
-export const CONCURRENCIA_LIMIT = pLimit(5);
+// limites para no saturar memoria (el rate limit controla velocidad)
+export const DOWNLOAD_LIMIT = createSimpleLimit(50);
+export const CONCURRENT_CASES = createSimpleLimit(50);
+export const API_LIMIT = createSimpleLimit(50);
+export const CASE_EXTRACTION_LIMIT = createSimpleLimit(50);
+export const CONCURRENCIA_LIMIT = createSimpleLimit(20); // Fase 1 y 2
