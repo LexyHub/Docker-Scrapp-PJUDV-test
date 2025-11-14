@@ -1,5 +1,6 @@
 import { load } from "cheerio";
 import { logger, logToFile } from "../config/logs.js";
+import { tick } from "../utils/rateLimiter.js";
 import { retry } from "../utils/retry.js";
 import {
   secuestrarFuncToken,
@@ -31,6 +32,7 @@ async function extractModal(page, tokenCausa, tokenGlobal) {
   try {
     const html = await retry(
       async () => {
+        await tick();
         const response = await page.request.post(URL, {
           data: params.toString(),
           headers: {
@@ -229,6 +231,7 @@ async function extractInfoNotificacionesReceptor(page, token) {
   try {
     const html = await retry(
       async () => {
+        await tick();
         const response = await page.request.post(URL, {
           data: params.toString(),
           headers: {
@@ -308,6 +311,7 @@ async function extractAnexoCausaModal(page, tokenAnexo) {
   try {
     const html = await retry(
       async () => {
+        await tick();
         const response = await page.request.post(URL, {
           data: params.toString(),
           headers: {
@@ -587,6 +591,7 @@ export async function extractAnexoModal(page, val) {
   try {
     const html = await retry(
       async () => {
+        await tick();
         const response = await page.request.post(URL, {
           data: params.toString(),
           headers: {

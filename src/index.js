@@ -1,6 +1,10 @@
 import { exportLogs, logger } from "./config/logs.js";
 import { getCausas } from "./services/casos.service.js";
-import { getAllMetadata, setMetadata } from "./services/metadata.service.js";
+import {
+  getAllMetadata,
+  setMetadata,
+  sumToMetadata,
+} from "./services/metadata.service.js";
 import { createBrowserInstance } from "./utils/browser.js";
 import { createFoldersIfNotExists, normalizeString } from "./utils/core.js";
 import { CONCURRENCIA_LIMIT } from "./constants/limits.js";
@@ -28,7 +32,7 @@ async function main() {
   await createFoldersIfNotExists();
 
   // Configurar rate limiting para scrape-causa (opcional)
-  configureRateLimit({ requestsPerBatch: 10, delayMs: 20 });
+  configureRateLimit({ requestsPerBatch: 15, delayMs: 500 });
 
   logger.info("--- Fase 0: Obtención de Casos y Browser ---");
   const casos = await getCausas({ limit: BD_LIMIT, applyHash: true });
@@ -63,6 +67,7 @@ async function main() {
     CONCURRENCIA_LIMIT.concurrency
   );
   logger.info(`Total de HASHES: ${getAllHashes().length}`);
+  sumToMetadata("movimientos_por_procesar", getAllHashes().length);
   const fase1Start = new Date().getTime();
   const tasksTabla = casos.map((formData, index) => {
     const causaId = crypto.randomUUID();
@@ -133,13 +138,15 @@ async function main() {
   logger.info("--- Etapa 4: Descarga de Archivos ---");
   const fase4Start = new Date().getTime();
   let estadisticasDescarga = { exitosas: 0, fallidas: 0, total: 0 };
+  const mergedTasks = [...allFileTasks, ...allCeleryTasks];
+  logger.info("Total de archivos a descargar:", mergedTasks.length);
 
-  if (allFileTasks.length > 0) {
+  if (mergedTasks.length > 0) {
     // Usar el nuevo sistema de descarga con batching y reintentos
     // Stream es mucho más rápido que Playwright, podemos ser más agresivos
     estadisticasDescarga = await descargarArchivosConBatching(
       page,
-      allFileTasks,
+      mergedTasks,
       {
         concurrencia: 15, // 15 descargas simultáneas con stream
         batchSize: 50, // 100 archivos por lote

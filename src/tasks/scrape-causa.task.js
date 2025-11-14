@@ -2,7 +2,7 @@ import { logger, logToFile } from "../config/logs.js";
 import { sumToMetadata } from "../services/metadata.service.js";
 import { transformCaso } from "../utils/mappers.js";
 import { parsearPaginaConCheerio } from "./scrape-cheerio.task.js";
-import { delay } from "../utils/core.js";
+import { tick } from "../utils/rateLimiter.js";
 
 const _URLS = {
   1: "https://oficinajudicialvirtual.pjud.cl/ADIR_871/suprema/consultaRitSuprema.php",
@@ -12,30 +12,6 @@ const _URLS = {
   5: "https://oficinajudicialvirtual.pjud.cl/ADIR_871/penal/consultaRitPenal.php",
   6: "https://oficinajudicialvirtual.pjud.cl/ADIR_871/cobranza/consultaRitCobranza.php",
 };
-
-// Configuración de rate limiting
-const RATE_LIMIT_CONFIG = {
-  requestsPerBatch: 15, // Número de peticiones antes de hacer una pausa
-  delayMs: 60, // Delay en milisegundos después de cada lote
-};
-
-/**
- * Configura el rate limiting para las peticiones de scraping de causas.
- * @param {Object} config - Configuración del rate limiting
- * @param {number} config.requestsPerBatch - Número de peticiones antes de pausar (default: 10)
- * @param {number} config.delayMs - Milisegundos de pausa después de cada lote (default: 20)
- */
-export function configureRateLimit(config) {
-  if (config.requestsPerBatch !== undefined) {
-    RATE_LIMIT_CONFIG.requestsPerBatch = config.requestsPerBatch;
-  }
-  if (config.delayMs !== undefined) {
-    RATE_LIMIT_CONFIG.delayMs = config.delayMs;
-  }
-  logger.info(
-    `Rate limiting configurado: ${RATE_LIMIT_CONFIG.requestsPerBatch} peticiones cada ${RATE_LIMIT_CONFIG.delayMs}ms`
-  );
-}
 
 /**
  * Función principal de la task de scraping de causas civiles. Llena el formulario y obtiene los datos paginados.
@@ -59,17 +35,8 @@ export async function scrapeCausaTask(page, formData, index, causaId) {
   try {
     while (true) {
       const url = _URLS[parsedFormData.competencia] || _URLS[3];
-
-      // Rate limiting: hacer pausa cada cierto número de peticiones
-      if (
-        requestCount > 0 &&
-        requestCount % RATE_LIMIT_CONFIG.requestsPerBatch === 0
-      ) {
-        logger.info(
-          `${logPrefix} Rate limit: pausa de ${RATE_LIMIT_CONFIG.delayMs}ms después de ${requestCount} peticiones`
-        );
-        await delay(RATE_LIMIT_CONFIG.delayMs);
-      }
+      // rate limit golbal: tick antes de cada peticion a pjud
+      await tick();
 
       const html = await page.evaluate(
         async (data) => {
@@ -126,8 +93,6 @@ export async function scrapeCausaTask(page, formData, index, causaId) {
       );
       sumToMetadata("requests", 1);
 
-      requestCount++; // Incrementar contador después de cada petición
-
       if (!html) {
         logger.warn(
           `${logPrefix} La API no devolvió HTML. Deteniendo crawler.`
@@ -159,3 +124,7 @@ export async function scrapeCausaTask(page, formData, index, causaId) {
     throw error;
   }
 }
+
+// re-exportar configureRateLimit para mantener compatibilidad con index.js
+// todo: deprecar esto a futuro
+export { configureRateLimit } from "../utils/rateLimiter.js";
