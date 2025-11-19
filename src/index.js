@@ -17,8 +17,8 @@ import { promises as fs } from "fs";
 import db from "./services/db.service.js";
 
 let TOKEN;
-const BD_LIMIT = 500; // Con 1k banean
-const RATE_LIMIT_CONFIG = { requestsPerBatch: 15, delayMs: 3 * 1000 };
+const BD_LIMIT = 300; // Con 1k banean
+const RATE_LIMIT_CONFIG = { requestsPerBatch: 15, delayMs: 4 * 1000 };
 
 async function main() {
   await createFoldersIfNotExists();

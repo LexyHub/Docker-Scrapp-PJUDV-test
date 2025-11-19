@@ -1,9 +1,9 @@
 import fs from "fs/promises";
 import path from "path";
 import {
-  descargarConPlaywright,
-  descargarPDFStream,
   descargarArchivoConReintentos,
+  descargarPDFStream,
+  getAuthHeaders,
 } from "./scrape-archivos.task.js";
 import { DATA_DIR } from "../constants/directories.js";
 import { logger } from "../config/logs.js";
@@ -11,10 +11,7 @@ import { sumToMetadata } from "../services/metadata.service.js";
 
 /**
  * Orquesta todas las fases de descarga de archivos (4A, 4B, 4C)
- * @param {Object} page - Instancia de page de Playwright
- * @param {Array} allFileTasks - Archivos que requieren sesión (anexos)
- * @param {Array} allCeleryTasks - Archivos celery (regulares)
- * @returns {Promise<Object>} - Estadísticas globales de descarga
+ * optimziado: Usa headers extraídos y descarga via fetch/stream
  */
 export async function ejecutarFaseDescargas(
   page,
@@ -35,19 +32,26 @@ export async function ejecutarFaseDescargas(
     allFileTasks.length + allCeleryTasks.length
   );
 
+  // Extraemos cookies y User-Agent de Playwright UNA VEZ.
+  // Esto permite cerrar/ignorar el navegador durante la descarga masiva.
+  let sessionHeaders = {};
+  if (allFileTasks.length > 0 || allCeleryTasks.length > 0) {
+    logger.info(
+      "🔑 Extrayendo credenciales del navegador para descargas optimizadas..."
+    );
+    sessionHeaders = await getAuthHeaders(page);
+  }
+
   // FASE 4A: Archivos con sesión (anexos)
   if (allFileTasks.length > 0) {
     logger.info(
       `\n[Fase 4A] Descargando ${allFileTasks.length} archivos que requieren sesión...`
     );
 
-    const statsConSesion = await descargarArchivoConReintentos(
-      page,
-      allFileTasks,
-      {
-        maxReintentos: 3,
-      }
-    );
+    const statsConSesion = await descargarArchivoConReintentos(allFileTasks, {
+      maxReintentos: 3,
+      headers: sessionHeaders,
+    });
 
     actualizarEstadisticas(estadisticasDescarga, statsConSesion);
 
@@ -65,14 +69,16 @@ export async function ejecutarFaseDescargas(
     );
   }
 
-  // FASE 4B: Archivos celery (regulares con contexto de navegador)
+  // FASE 4B: Archivos celery (regulares)
   if (allCeleryTasks.length > 0) {
     logger.info(
-      `\n[Fase 4B] Descargando ${allCeleryTasks.length} archivos celery (con contexto de navegador)...`
+      `\n[Fase 4B] Descargando ${allCeleryTasks.length} archivos celery (públicos/token)...`
     );
 
-    const statsCelery = await descargarPDFStream(page, allCeleryTasks, {
+    const statsCelery = await descargarPDFStream(allCeleryTasks, {
       maxReintentos: 3,
+      // Aunque sean públicos, pasar el User-Agent de la sesión ayuda a evitar bloqueos
+      headers: { "User-Agent": sessionHeaders["User-Agent"] },
     });
 
     actualizarEstadisticas(estadisticasDescarga, statsCelery);
@@ -105,9 +111,9 @@ export async function ejecutarFaseDescargas(
 
   if (todosLosArchivosFallidos.length > 0) {
     archivosFallidosFinales = await ejecutarReintentos(
-      page,
       todosLosArchivosFallidos,
-      estadisticasDescarga
+      estadisticasDescarga,
+      sessionHeaders
     );
   }
 
@@ -131,25 +137,27 @@ export async function ejecutarFaseDescargas(
  * Ejecuta reintentos finales para archivos fallidos
  */
 async function ejecutarReintentos(
-  page,
   archivosFallidos,
-  estadisticasDescarga
+  estadisticasDescarga,
+  headers
 ) {
   logger.info(
     `\n[Fase 4C] ${archivosFallidos.length} archivos fallidos. Iniciando reintentos finales...`
   );
 
   const statsReintentoFinal = await descargarArchivoConReintentos(
-    page,
     archivosFallidos,
     {
       maxReintentos: 2,
+      headers: headers,
     }
   );
 
   // Actualizar estadísticas con los reintentos exitosos
   estadisticasDescarga.exitosas += statsReintentoFinal.exitosas;
-  estadisticasDescarga.fallidas = statsReintentoFinal.fallidas;
+  // Ajustamos las fallidas restando las que ahora fueron exitosas
+  estadisticasDescarga.fallidas =
+    estadisticasDescarga.total - estadisticasDescarga.exitosas;
 
   logger.info(
     `[Fase 4C] ${statsReintentoFinal.exitosas} archivos recuperados tras reintentos`

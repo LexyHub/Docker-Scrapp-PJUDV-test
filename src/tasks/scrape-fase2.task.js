@@ -75,8 +75,18 @@ export async function ejecutarFaseGuardado(
 
   let guardadosExitosos = 0;
   let guardadosFallidos = 0;
+  let casosOmitidos = 0;
 
   for (const caso of casosCompletos) {
+    // Omitir casos que no tengan cuadernos o info_notificaciones_receptor
+    if (!caso.cuadernos && !caso.info_notificaciones_receptor) {
+      casosOmitidos++;
+      logger.info(
+        `Caso ${caso.rit || caso.id || "sin-identificador"} omitido: no tiene cuadernos ni info_notificaciones_receptor`
+      );
+      continue;
+    }
+
     const nombreCaso = normalizeString(caso.rit || caso.id || "sin-nombre");
     const fileName = `${nombreCaso}.json`;
     const fullPath = path.join(dataDir, fileName);
@@ -96,8 +106,9 @@ export async function ejecutarFaseGuardado(
   setMetadata("tiempo_fase_3", `${duracionSegundos}s`);
   setMetadata("casos_guardados_exitosos", guardadosExitosos);
   setMetadata("casos_guardados_fallidos", guardadosFallidos);
+  setMetadata("casos_omitidos", casosOmitidos);
   logger.info(
-    `${guardadosExitosos} casos guardados exitosamente, ${guardadosFallidos} fallidos.`
+    `${guardadosExitosos} casos guardados exitosamente, ${guardadosFallidos} fallidos, ${casosOmitidos} omitidos (sin cuadernos ni info_notificaciones_receptor).`
   );
   logger.info("--- Etapa 3 Completada ---");
 }
