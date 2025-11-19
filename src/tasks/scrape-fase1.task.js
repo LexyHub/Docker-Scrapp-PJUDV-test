@@ -20,7 +20,10 @@ export async function ejecutarFaseCausas(page, casos) {
 
   const totalHashes = getAllHashes().length;
   logger.info(`Total de HASHES: ${totalHashes}`);
-  sumToMetadata("movimientos_por_procesar", totalHashes);
+  const movimientos = casos.reduce((sum, caso) => {
+    return sum + caso.movimientos.length;
+  }, 0);
+  sumToMetadata("movimientos_encolados", movimientos);
 
   const fase1Start = new Date().getTime();
 
@@ -29,7 +32,18 @@ export async function ejecutarFaseCausas(page, casos) {
     const causaId = crypto.randomUUID();
 
     return CONCURRENCIA_LIMIT(() =>
-      retry(() => scrapeCausaTask(page, formData, index + 1, causaId), 3, 2000)
+      retry(
+        () => scrapeCausaTask(page, formData, index + 1, causaId),
+        3,
+        2000
+      ).catch((err) => {
+        logger.warn(
+          `[Causa N° ${
+            index + 1
+          }: ${causaId}] Fallo no fatal tras reintentos: ${err?.message || err}`
+        );
+        return null; // No romper el flujo; se filtra más abajo
+      })
     );
   });
 

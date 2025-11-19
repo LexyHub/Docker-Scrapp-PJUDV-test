@@ -25,14 +25,19 @@ const _URLS = {
 export async function scrapeCausaTask(page, formData, index, causaId) {
   const logPrefix = `[Causa N° ${index}: ${causaId}]`;
   logger.info(`${logPrefix} Iniciando crawler...`);
+  logToFile({
+    message: `${logPrefix} Datos del formulario: ${JSON.stringify(formData)}`,
+    type: "debug",
+  });
+  logToFile({ message: `Con causa ID: ${causaId}`, type: "debug" });
 
   const todosLosDatos = [];
   let paginaToken = undefined; // Página 1 (sin token)
-  let requestCount = 0; // Contador de peticiones realizadas
 
   const parsedFormData = transformCaso(formData);
 
   try {
+    /*
     while (true) {
       const url = _URLS[parsedFormData.competencia] || _URLS[3];
       // rate limit golbal: tick antes de cada peticion a pjud
@@ -91,17 +96,17 @@ export async function scrapeCausaTask(page, formData, index, causaId) {
         },
         { url, parsedFormData, pagina: paginaToken }
       );
-      sumToMetadata("requests", 1);
 
       if (!html) {
         logger.warn(
           `${logPrefix} La API no devolvió HTML. Deteniendo crawler.`
         );
+        sumToMetadata("causas_no_encontradas", 1);
         break;
       }
 
       logToFile({
-        message: `Respuesta HTML recibida para página token: ${paginaToken}: ${
+        message: `Respuesta HTML recibida para página token (siguiente página): ${paginaToken}: ${
           html ? "OK" : "EMPTY"
         }`,
         type: "debug",
@@ -116,6 +121,80 @@ export async function scrapeCausaTask(page, formData, index, causaId) {
         break;
       }
     }
+    */
+    const url = _URLS[parsedFormData.competencia] || _URLS[3];
+    // rate limit golbal: tick antes de cada peticion a pjud
+    await tick();
+
+    const html = await page.evaluate(
+      async (data) => {
+        function serializeFormData(data) {
+          return Object.entries(data)
+            .filter(([_, value]) => value !== undefined && value !== null)
+            .map(
+              ([key, value]) =>
+                encodeURIComponent(key) +
+                "=" +
+                encodeURIComponent(String(value))
+            )
+            .join("&");
+        }
+
+        llamarCaptchaTodos();
+
+        const formData = {
+          ...data.parsedFormData,
+          "g-recaptcha-response-rit": document.getElementById(
+            "g-recaptcha-response-rit"
+          ).value,
+          action: "validate_captcha_rit",
+          pagina: data.pagina,
+        };
+        const serialized = serializeFormData(formData);
+
+        try {
+          const response = await fetch(data.url, {
+            method: "POST",
+            headers: {
+              "Content-Type":
+                "application/x-www-form-urlencoded; charset=UTF-8",
+              "Cache-Control": "no-cache",
+            },
+            body: serialized,
+            cache: "no-cache",
+            timeout: 60000,
+          });
+
+          if (!response.ok)
+            throw new Error(`HTTP ${response.status} en ${data.url}`);
+
+          const html = await response.text();
+          return html;
+        } catch (error) {
+          console.error(
+            `[paginaRit] Error al fetchear ${data.url}: ${error.message}`
+          );
+          throw error;
+        }
+      },
+      { url, parsedFormData, pagina: paginaToken }
+    );
+
+    if (!html) {
+      logger.warn(`${logPrefix} La API no devolvió HTML. Deteniendo crawler.`);
+      sumToMetadata("causas_no_encontradas", 1);
+    }
+
+    logToFile({
+      message: `Respuesta HTML recibida para página token (siguiente página): ${paginaToken}: ${
+        html ? "OK" : "EMPTY"
+      }`,
+      type: "debug",
+    });
+
+    // extraemos la data
+    const resultado = parsearPaginaConCheerio(html);
+    todosLosDatos.push(...resultado.data);
 
     logger.info(`${logPrefix} Éxito. ${todosLosDatos.length} registros.`);
     return { id: causaId, data: todosLosDatos };

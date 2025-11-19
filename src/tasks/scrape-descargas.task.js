@@ -1,8 +1,13 @@
 import fs from "fs/promises";
 import path from "path";
-import { descargarArchivosConSesion } from "./scrape-archivos.task.js";
+import {
+  descargarConPlaywright,
+  descargarPDFStream,
+  descargarArchivoConReintentos,
+} from "./scrape-archivos.task.js";
 import { DATA_DIR } from "../constants/directories.js";
 import { logger } from "../config/logs.js";
+import { sumToMetadata } from "../services/metadata.service.js";
 
 /**
  * Orquesta todas las fases de descarga de archivos (4A, 4B, 4C)
@@ -25,6 +30,10 @@ export async function ejecutarFaseDescargas(
   };
 
   const todosLosArchivosFallidos = [];
+  sumToMetadata(
+    "archivos_encolados",
+    allFileTasks.length + allCeleryTasks.length
+  );
 
   // FASE 4A: Archivos con sesión (anexos)
   if (allFileTasks.length > 0) {
@@ -32,13 +41,10 @@ export async function ejecutarFaseDescargas(
       `\n[Fase 4A] Descargando ${allFileTasks.length} archivos que requieren sesión...`
     );
 
-    const statsConSesion = await descargarArchivosConSesion(
+    const statsConSesion = await descargarArchivoConReintentos(
       page,
       allFileTasks,
       {
-        concurrencia: 50,
-        batchSize: 100,
-        delayEntreLotes: 0,
         maxReintentos: 3,
       }
     );
@@ -55,7 +61,7 @@ export async function ejecutarFaseDescargas(
     }
 
     logger.info(
-      `[Fase 4A] ✅ ${statsConSesion.exitosas}/${statsConSesion.total} archivos con sesión descargados`
+      `[Fase 4A] ${statsConSesion.exitosas}/${statsConSesion.total} archivos con sesión descargados`
     );
   }
 
@@ -65,10 +71,7 @@ export async function ejecutarFaseDescargas(
       `\n[Fase 4B] Descargando ${allCeleryTasks.length} archivos celery (con contexto de navegador)...`
     );
 
-    const statsCelery = await descargarArchivosConSesion(page, allCeleryTasks, {
-      concurrencia: 50,
-      batchSize: 100,
-      delayEntreLotes: 0,
+    const statsCelery = await descargarPDFStream(page, allCeleryTasks, {
       maxReintentos: 3,
     });
 
@@ -84,7 +87,7 @@ export async function ejecutarFaseDescargas(
     }
 
     logger.info(
-      `[Fase 4B] ✅ ${statsCelery.exitosas}/${statsCelery.total} archivos celery descargados`
+      `[Fase 4B] ${statsCelery.exitosas}/${statsCelery.total} archivos celery descargados`
     );
   }
 
@@ -133,16 +136,13 @@ async function ejecutarReintentos(
   estadisticasDescarga
 ) {
   logger.info(
-    `\n[Fase 4C] 🔄 ${archivosFallidos.length} archivos fallidos. Iniciando reintentos finales...`
+    `\n[Fase 4C] ${archivosFallidos.length} archivos fallidos. Iniciando reintentos finales...`
   );
 
-  const statsReintentoFinal = await descargarArchivosConSesion(
+  const statsReintentoFinal = await descargarArchivoConReintentos(
     page,
     archivosFallidos,
     {
-      concurrencia: 30,
-      batchSize: 50,
-      delayEntreLotes: 0,
       maxReintentos: 2,
     }
   );
@@ -152,16 +152,14 @@ async function ejecutarReintentos(
   estadisticasDescarga.fallidas = statsReintentoFinal.fallidas;
 
   logger.info(
-    `[Fase 4C] ✅ ${statsReintentoFinal.exitosas} archivos recuperados tras reintentos`
+    `[Fase 4C] ${statsReintentoFinal.exitosas} archivos recuperados tras reintentos`
   );
 
   // Guardar archivos que aún fallan después de todos los intentos
   if (statsReintentoFinal.archivosFallidos.length > 0) {
     await guardarArchivosFallidos(statsReintentoFinal.archivosFallidos);
   } else {
-    logger.info(
-      "✅ Todos los archivos descargados exitosamente tras reintentos!"
-    );
+    logger.info("Todos los archivos descargados exitosamente tras reintentos!");
   }
 
   return statsReintentoFinal.archivosFallidos;
@@ -181,7 +179,7 @@ async function guardarArchivosFallidos(archivosFallidos) {
     );
 
     logger.warn(
-      `⚠️  ${archivosFallidos.length} archivos aún fallidos guardados en: ${fallidosPath}`
+      `${archivosFallidos.length} archivos aún fallidos guardados en: ${fallidosPath}`
     );
     logger.info(
       "Estos archivos pueden tener tokens expirados o errores permanentes del servidor."

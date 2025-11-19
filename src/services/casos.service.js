@@ -90,7 +90,8 @@ export async function getCausas({ limit = null, applyHash = true }) {
       causa.movimientos = causa.movimientos.map((mv) => {
         const fecha_movimiento_fmt = formatDateDDMMYYYY(mv.fecha_movimiento);
         const hash = movimientoHash({
-          ...mv,
+          desc_tramite: mv.desc_tramite,
+          folio: mv.folio,
           fecha_movimiento: fecha_movimiento_fmt,
         });
         // agregamos el hash al almacenamiento en memoria

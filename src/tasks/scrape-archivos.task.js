@@ -22,60 +22,9 @@ export function collectFileTasks(
   _normalizeString
 ) {
   const tasks = [];
-  // Para posible integración a Celery.
-  const celeryTasks = [];
+  const celeryTasks = []; // sin sesion
 
   if (!data.cuadernos) return [];
-
-  // Manejar archivos únicos en el objeto principal (texto_demanda, certificado_envio, ebook)
-  // Se deprecó porque es información que nunca cambia. No se eliminará por compatibilidad/necesidades futuras.
-  /*
-  const singleFileKeys = ["texto_demanda", "certificado_envio", "ebook"];
-  for (const key of singleFileKeys) {
-    const val = data[key];
-    if (val && typeof val === "string" && val.startsWith("http")) {
-      sumToMetadata("descargas_archivo_encoladas", 1);
-      const fileId = crypto.randomUUID();
-      const relativePath = path.join(fileUUID, `${fileId}.pdf`);
-      const fullPath = path.join(downloadsDir, relativePath);
-      tasks.push({ url: val, fullPath });
-      // Reemplazar en el objeto por la ruta relativa local
-      data[key] = relativePath;
-    }
-  }
-  */
-
-  // Manejar anexos_de_la_causa que pueden venir como [{ doc: 'url', ... }, ...]
-  // Se deprecó porque es información que nunca cambia. No se eliminará por compatibilidad/necesidades futuras.
-  /*
-  if (Array.isArray(data.anexos_de_la_causa)) {
-    for (const anexo of data.anexos_de_la_causa) {
-      if (!anexo || !anexo.doc) continue;
-      // caso: doc es string (url)
-      if (typeof anexo.doc === "string" && anexo.doc.startsWith("http")) {
-        sumToMetadata("descargas_archivo_encoladas", 1);
-        const fileId = crypto.randomUUID();
-        const relativePath = path.join(fileUUID, `${fileId}.pdf`);
-        const fullPath = path.join(downloadsDir, relativePath);
-        tasks.push({ url: anexo.doc, fullPath });
-        anexo.doc = [{ name: fileId, localPath: relativePath }];
-      } else if (Array.isArray(anexo.doc)) {
-        // caso: doc es array de strings o array de objetos
-        for (let i = 0; i < anexo.doc.length; i++) {
-          const entry = anexo.doc[i];
-          if (typeof entry === "string" && entry.startsWith("http")) {
-            sumToMetadata("descargas_archivo_encoladas", 1);
-            const fileId = crypto.randomUUID();
-            const relativePath = path.join(fileUUID, `${fileId}.pdf`);
-            const fullPath = path.join(downloadsDir, relativePath);
-            tasks.push({ url: entry, fullPath });
-            anexo.doc[i] = { name: fileId, localPath: relativePath };
-          }
-        }
-      }
-    }
-  }
-  */
 
   // recorremos archivos relacionados a movimientos
   for (const cuadernoName in data.cuadernos) {
@@ -111,12 +60,6 @@ export function collectFileTasks(
                   fullPath,
                 });
               }
-              // Lo sacamos de momento, para dividir colas
-              // tasks.push({
-              //   url,
-              //   fullPath,
-              //   requiresSession: requiresSession || false,
-              // });
 
               fileInfo.localPath = relativePath;
               delete fileInfo.url;
@@ -170,14 +113,8 @@ export function collectFileTasks(
   return { tasks, celeryTasks };
 }
 
-/**
- * Función para descargar un archivo PDF usando streams
- * @param {string} url URL del archivo PDF a descargar
- * @param {string} rutaSalida Ruta donde se guardará el archivo descargado
- * @param {number} timeout Tiempo máximo de espera para la descarga (default: 120s para manejar latencia de servidor)
- * @returns {Promise<string>} Promesa que se resuelve con la ruta del archivo descargado
- */
-function descargarPDFStream(url, rutaSalida, timeout = 120000) {
+// Descarga por stream para un solo archivo
+function descargarPDFStreamIndividual(url, rutaSalida, timeout = 15000) {
   return new Promise((resolve, reject) => {
     const dir = path.dirname(rutaSalida);
     if (!fs.existsSync(dir)) {
@@ -186,34 +123,15 @@ function descargarPDFStream(url, rutaSalida, timeout = 120000) {
     const archivo = fs.createWriteStream(rutaSalida);
     let bytesReceived = 0;
 
-    const urlObj = new URL(url);
-    const options = {
-      hostname: urlObj.hostname,
-      path: urlObj.pathname + urlObj.search,
-      method: "GET",
-      headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        Accept:
-          "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
-        "Accept-Language": "es-ES,es;q=0.9,en;q=0.8",
-        "Accept-Encoding": "gzip, deflate, br",
-        Connection: "keep-alive",
-        "Upgrade-Insecure-Requests": "1",
-        "Sec-Fetch-Dest": "document",
-        "Sec-Fetch-Mode": "navigate",
-        "Sec-Fetch-Site": "none",
-        "Sec-Fetch-User": "?1",
-        "Cache-Control": "max-age=0",
-        Referer: "https://oficinajudicialvirtual.pjud.cl/",
-      },
-    };
-
     const req = https
-      .get(options, (respuesta) => {
+      .get(url, (respuesta) => {
         if (respuesta.statusCode === 301 || respuesta.statusCode === 302) {
           if (respuesta.headers.location) {
-            descargarPDFStream(respuesta.headers.location, rutaSalida, timeout)
+            descargarPDFStreamIndividual(
+              respuesta.headers.location,
+              rutaSalida,
+              timeout
+            )
               .then(resolve)
               .catch(reject);
             return;
@@ -222,10 +140,10 @@ function descargarPDFStream(url, rutaSalida, timeout = 120000) {
             return;
           }
         }
-        if (respuesta.statusCode !== 200) {
-          reject(
-            new Error(`HTTP ${respuesta.statusCode} - ${url.substring(0, 80)}`)
-          );
+        // Aceptar cualquier código 2xx como éxito
+        if (respuesta.statusCode < 200 || respuesta.statusCode >= 300) {
+          const errorMsg = `HTTP ${respuesta.statusCode} al descargar ${url}`;
+          reject(new Error(errorMsg));
           archivo.close();
           fs.unlink(rutaSalida, () => {});
           return;
@@ -263,40 +181,35 @@ function descargarPDFStream(url, rutaSalida, timeout = 120000) {
   });
 }
 
-/**
- * Función para descargar un archivo PDF usando Playwright para manejar sesiones autenticadas
- * @param {object} page Instancia de Playwright Page
- * @param {string} url URL del archivo PDF a descargar
- * @param {string} rutaSalida Ruta donde se guardará el archivo descargado
- * @param {number} timeout Tiempo máximo de espera para la descarga (default: 120s para manejar latencia de servidor)
- * @returns {Promise<string>} Promesa que se resuelve con la ruta del archivo descargado
- */
-async function descargarConPlaywright(page, url, rutaSalida, timeout = 120000) {
+export async function descargarConPlaywright(
+  page,
+  url,
+  rutaSalida,
+  timeout = 30000
+) {
   const dir = path.dirname(rutaSalida);
   await promiseFs.mkdir(dir, { recursive: true });
 
   try {
-    const response = await page.request.get(url, {
-      timeout,
-      headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        Accept:
-          "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "es-ES,es;q=0.9",
-        Referer: "https://oficinajudicialvirtual.pjud.cl/",
-      },
-    });
+    const response = await page.request.get(url, { timeout });
     if (!response.ok()) {
-      throw new Error(`HTTP ${response.status()}: ${response.statusText()}`);
+      const errorMsg = `HTTP ${response.status()}: ${response.statusText()}`;
+      // Limpiar archivo parcial
+      try {
+        await promiseFs.unlink(rutaSalida);
+      } catch {}
+      // Rechazar con error descriptivo (no rompe el flujo global)
+      throw new Error(errorMsg);
     }
     const buffer = await response.body();
     await promiseFs.writeFile(rutaSalida, buffer);
     return rutaSalida;
   } catch (error) {
+    // Limpiar archivo parcial si existe
     try {
       await promiseFs.unlink(rutaSalida);
     } catch {}
+    // Re-lanzar para que descargarUnArchivo lo capture y retorne false
     throw error;
   }
 }
@@ -304,271 +217,182 @@ async function descargarConPlaywright(page, url, rutaSalida, timeout = 120000) {
 /**
  * Descarga un archivo individual con estrategias de fallback
  * @param {Object} page - Instancia de page de Playwright
- * @param {Object} task - Tarea de descarga {url, fullPath}
- * @param {number} index - Índice de la tarea para logging
- * @param {number} intentoActual - Número de intento actual (para reintentos)
+ * @param {Object} task - Tarea de descarga {url, fullPath, requiresSession?}
  * @returns {Promise<boolean>} - true si descarga exitosa, false si falló
  */
-async function descargarArchivoConReintentos(
-  page,
-  task,
-  index,
-  intentoActual = 1
-) {
+async function descargarUnArchivo(page, task) {
   const { url, fullPath, requiresSession } = task;
-  const logPrefix = `[Descarga ${index}${
-    intentoActual > 1 ? ` intento ${intentoActual}` : ""
-  }]`;
+  const logPrefix = "[Descargas]";
 
   try {
-    // Aplicar rate limiting antes de cada descarga
+    // Aplicar rate limiting global antes de cada descarga
     await tick();
 
     // Solo archivos marcados explícitamente como "requiresSession" usan Playwright
     if (requiresSession) {
       logger.debug(
-        `${logPrefix} Descargando con Playwright (anexo, requiere sesión): ${url.substring(
-          0,
-          60
-        )}...`
+        `${logPrefix} Descargando con Playwright (anexo, requiere sesión): ${url}...`
       );
-      await descargarConPlaywright(page, url, fullPath, 120000);
+      await descargarConPlaywright(page, url, fullPath, 30000);
     } else {
       // Archivos regulares: usar stream (más rápido), sin fallback
-      logger.debug(
-        `${logPrefix} Descargando con Stream: ${url.substring(0, 60)}...`
-      );
-      await descargarPDFStream(url, fullPath, 120000);
+      logger.debug(`${logPrefix} Descargando con Stream: ${url}...`);
+      await descargarPDFStreamIndividual(url, fullPath, 15000);
     }
-
-    // sumToMetadata("descargas_exitosas", 1);
     return true;
   } catch (error) {
-    // Logging detallado según el tipo de error
-    if (error.message.includes("403") || error.message.includes("401")) {
-      logger.error(
-        `${logPrefix} HTTP ${
-          error.message.match(/\d{3}/)?.[0] || "403/401"
-        } - Acceso denegado | URL: ${url}`
+    // Detectar errores HTTP específicos (403, 404, 500, etc.)
+    const esError403 =
+      error.message.includes("403") || error.message.includes("Forbidden");
+    const esError404 =
+      error.message.includes("404") || error.message.includes("Not Found");
+
+    if (esError403) {
+      logger.warn(`${logPrefix} HTTP 403 Forbidden (sin permisos): ${url}`);
+    } else if (esError404) {
+      logger.warn(
+        `${logPrefix} HTTP 404 Not Found (archivo no existe): ${url}`
       );
-      sumToMetadata("descargas_403_401", 1);
-    } else if (
-      error.message.includes("Timeout") ||
-      error.message.includes("timeout")
-    ) {
-      logger.error(`${logPrefix} TIMEOUT | URL: ${url}`);
-      sumToMetadata("descargas_timeout", 1);
     } else {
-      logger.error(`${logPrefix} ${error.message} | URL: ${url}`);
+      logger.error(`${logPrefix} Error: ${error.message} | URL: ${url}`);
     }
+
+    sumToMetadata("descargas_fallidas", 1);
     return false;
   }
 }
 
 /**
- * Descarga archivos que requieren sesión autenticada (anexos) usando Playwright
+ * Sistema de descarga masiva con reintentos. tick() maneja el rate limiting automáticamente.
  * @param {Object} page - Instancia de page de Playwright
- * @param {Array} tasks - Array de tareas de descarga que requieren sesión
+ * @param {Array} tasks - Array de tareas de descarga
  * @param {Object} options - Opciones de configuración
  * @returns {Promise<Object>} - Estadísticas de descarga
  */
-export async function descargarArchivosConSesion(page, tasks, options = {}) {
+export async function descargarArchivosConBatching(page, tasks, options = {}) {
   const {
-    concurrencia = 5, // Playwright es más pesado, menos concurrencia
-    batchSize = 15,
-    delayEntreLotes = 50,
-    maxReintentos = 2,
+    maxReintentos = 2, // Reintentos por archivo
   } = options;
 
   if (!tasks || tasks.length === 0) {
-    return { exitosas: 0, fallidas: 0, total: 0, archivosFallidos: [] };
+    logger.info("[Descargas] No hay archivos para descargar.");
+    return { exitosas: 0, fallidas: 0, total: 0 };
   }
 
-  const totalArchivos = tasks.length;
+  // Sanitizar tareas: remover entradas sin URL válida
+  const validTasks = tasks.filter(
+    (t) => t && typeof t.url === "string" && t.url.trim().length > 0
+  );
+  if (validTasks.length !== tasks.length) {
+    const diff = tasks.length - validTasks.length;
+    logger.warn(`[Descargas] ${diff} tareas con URL inválida fueron omitidas.`);
+  }
+
+  const totalArchivos = validTasks.length;
   let exitosas = 0;
+  let fallidas = 0;
   const archivosFallidos = [];
 
   logger.info(
-    `[Descargas con Sesión] Iniciando descarga de ${totalArchivos} archivos (${concurrencia} en paralelo, lotes de ${batchSize})`
+    `[Descargas] Iniciando descarga de ${totalArchivos} archivos (rate limiting controlado por tick())`
   );
 
-  const lotes = [];
-  for (let i = 0; i < tasks.length; i += batchSize) {
-    lotes.push(tasks.slice(i, i + batchSize));
+  // Procesar tareas secuencialmente - tick() controla el rate limiting
+  for (let i = 0; i < validTasks.length; i++) {
+    const task = validTasks[i];
+    const exito = await descargarUnArchivo(page, task);
+    if (exito) {
+      exitosas++;
+    } else {
+      archivosFallidos.push(task);
+    }
+
+    // Log de progreso cada 50 archivos
+    if ((i + 1) % 50 === 0 || i === validTasks.length - 1) {
+      logger.info(
+        `[Descargas] Progreso: ${
+          i + 1
+        }/${totalArchivos} (${exitosas} exitosas, ${
+          archivosFallidos.length
+        } fallidas)`
+      );
+    }
   }
 
-  for (let loteIdx = 0; loteIdx < lotes.length; loteIdx++) {
-    const lote = lotes[loteIdx];
-    const loteNum = loteIdx + 1;
-
-    logger.info(
-      `[Descargas con Sesión] Procesando lote ${loteNum}/${lotes.length} (${lote.length} archivos)...`
+  if (archivosFallidos.length > 0 && maxReintentos > 0) {
+    logger.warn(
+      `[Descargas] ${archivosFallidos.length} archivos fallaron. Iniciando reintentos...`
     );
 
-    const promesas = lote.map((task, idx) => {
-      const globalIdx = loteIdx * batchSize + idx + 1;
-      return (async () => {
-        const exito = await descargarArchivoConReintentos(
-          page,
-          { ...task, requiresSession: true },
-          globalIdx,
-          1
-        );
+    for (let intento = 2; intento <= maxReintentos + 1; intento++) {
+      const porReintentar = [...archivosFallidos];
+      archivosFallidos.length = 0; // Limpiar array
+
+      logger.info(
+        `[Descargas] Reintento ${intento - 1}/${maxReintentos}: ${
+          porReintentar.length
+        } archivos`
+      );
+
+      // Reintentar secuencialmente - tick() maneja el rate limiting
+      for (const task of porReintentar) {
+        // Pequeño backoff adicional para reintentos
+        await new Promise((resolve) => setTimeout(resolve, intento * 50));
+        const exito = await descargarUnArchivo(page, task);
         if (exito) {
           exitosas++;
         } else {
           archivosFallidos.push(task);
         }
-      })();
-    });
+      }
 
-    await Promise.all(promesas);
-
-    if (loteIdx < lotes.length - 1 && delayEntreLotes > 0) {
-      await new Promise((resolve) => setTimeout(resolve, delayEntreLotes));
+      // Si ya no hay fallidos, salir del ciclo de reintentos
+      if (archivosFallidos.length === 0) {
+        logger.info(
+          `[Descargas] ✓ Todos los archivos descargados exitosamente tras reintentos.`
+        );
+        break;
+      }
     }
   }
 
-  // Fase de reintentos
-  if (archivosFallidos.length > 0 && maxReintentos > 0) {
-    logger.warn(
-      `[Descargas con Sesión] ${archivosFallidos.length} archivos fallaron. Iniciando reintentos...`
-    );
+  fallidas = archivosFallidos.length;
 
-    for (let intento = 2; intento <= maxReintentos + 1; intento++) {
-      const porReintentar = [...archivosFallidos];
-      archivosFallidos.length = 0;
-
-      const promesasReintento = porReintentar.map((task, idx) => {
-        return (async () => {
-          await new Promise((resolve) => setTimeout(resolve, intento * 100));
-          const exito = await descargarArchivoConReintentos(
-            page,
-            { ...task, requiresSession: true },
-            idx + 1,
-            intento
-          );
-          if (exito) {
-            exitosas++;
-          } else {
-            archivosFallidos.push(task);
-          }
-        })();
-      });
-
-      await Promise.all(promesasReintento);
-
-      if (archivosFallidos.length === 0) break;
-    }
-  }
-
-  const fallidas = archivosFallidos.length;
+  // Resumen final
   logger.info(
-    `[Descargas con Sesión] Completado: ${exitosas}/${totalArchivos} exitosas, ${fallidas} fallidas`
+    `[Descargas] Completado: ${exitosas}/${totalArchivos} exitosas, ${fallidas} fallidas`
   );
+
+  if (fallidas > 0) {
+    logger.error(
+      `[Descargas] ${fallidas} archivos NO se pudieron descargar tras ${maxReintentos} reintentos:`
+    );
+    archivosFallidos.slice(0, 5).forEach((task) => {
+      logger.error(`  - ${task?.url || "(sin URL)"}`);
+    });
+    if (fallidas > 5) {
+      logger.error(`  ... y ${fallidas - 5} más.`);
+    }
+  }
 
   return { exitosas, fallidas, total: totalArchivos, archivosFallidos };
 }
 
 /**
- * Descarga archivos celery (sin sesión) usando stream puro - optimizado para velocidad
- * @param {Array} tasks - Array de tareas de descarga sin sesión requerida
- * @param {Object} options - Opciones de configuración
- * @returns {Promise<Object>} - Estadísticas de descarga
+ * Wrapper: Descarga archivos que REQUIEREN SESIÓN (usa Playwright)
+ * Firma compatible con scrape-descargas.task.js
  */
-export async function descargarArchivosCelery(tasks, options = {}) {
-  const {
-    concurrencia = 50, // Sin pLimit, solo rate limit global
-    batchSize = 100,
-    delayEntreLotes = 0,
-    maxReintentos = 2,
-  } = options;
-
-  if (!tasks || tasks.length === 0) {
-    return { exitosas: 0, fallidas: 0, total: 0, archivosFallidos: [] };
-  }
-
-  const totalArchivos = tasks.length;
-  let exitosas = 0;
-  const archivosFallidos = [];
-
-  logger.info(
-    `[Descargas Celery/Stream] Iniciando descarga de ${totalArchivos} archivos (rate limit global activo)`
-  );
-
-  const lotes = [];
-  for (let i = 0; i < tasks.length; i += batchSize) {
-    lotes.push(tasks.slice(i, i + batchSize));
-  }
-
-  for (let loteIdx = 0; loteIdx < lotes.length; loteIdx++) {
-    const lote = lotes[loteIdx];
-    const loteNum = loteIdx + 1;
-
-    logger.info(
-      `[Descargas Celery] Procesando lote ${loteNum}/${lotes.length} (${lote.length} archivos)...`
-    );
-
-    // Ejecutar todas en paralelo, el rate limit controla la velocidad
-    const promesas = lote.map((task, idx) => {
-      const globalIdx = loteIdx * batchSize + idx + 1;
-      return (async () => {
-        const exito = await descargarArchivoConReintentos(
-          null, // No page para stream
-          { ...task, requiresSession: false },
-          globalIdx,
-          1
-        );
-        if (exito) {
-          exitosas++;
-        } else {
-          archivosFallidos.push(task);
-        }
-      })();
-    });
-
-    await Promise.all(promesas);
-  }
-
-  // Fase de reintentos
-  if (archivosFallidos.length > 0 && maxReintentos > 0) {
-    logger.warn(
-      `[Descargas Celery] ${archivosFallidos.length} archivos fallaron. Iniciando reintentos...`
-    );
-
-    for (let intento = 2; intento <= maxReintentos + 1; intento++) {
-      const porReintentar = [...archivosFallidos];
-      archivosFallidos.length = 0;
-
-      const promesasReintento = porReintentar.map((task, idx) => {
-        return (async () => {
-          await new Promise((resolve) => setTimeout(resolve, intento * 100));
-          const exito = await descargarArchivoConReintentos(
-            null,
-            { ...task, requiresSession: false },
-            idx + 1,
-            intento
-          );
-          if (exito) {
-            exitosas++;
-          } else {
-            archivosFallidos.push(task);
-          }
-        })();
-      });
-
-      await Promise.all(promesasReintento);
-
-      if (archivosFallidos.length === 0) break;
-    }
-  }
-
-  const fallidas = archivosFallidos.length;
-  logger.info(
-    `[Descargas Celery] Completado: ${exitosas}/${totalArchivos} exitosas, ${fallidas} fallidas`
-  );
-
-  return { exitosas, fallidas, total: totalArchivos, archivosFallidos };
+export async function descargarArchivoConReintentos(page, tasks, options = {}) {
+  // Asegurar flag requiresSession en true
+  const tasksConSesion = tasks.map((t) => ({ ...t, requiresSession: true }));
+  return descargarArchivosConBatching(page, tasksConSesion, options);
 }
 
-// Función legacy descargarArchivosConBatching eliminada - usar descargarArchivosConSesion
+/**
+ * Wrapper: Descarga archivos CELERY/REGULARES (stream sin sesión)
+ * Firma compatible con scrape-descargas.task.js
+ */
+export async function descargarPDFStream(page, tasks, options = {}) {
+  const tasksSinSesion = tasks.map((t) => ({ ...t, requiresSession: false }));
+  return descargarArchivosConBatching(page, tasksSinSesion, options);
+}

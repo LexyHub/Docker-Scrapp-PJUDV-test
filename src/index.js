@@ -1,6 +1,6 @@
 import { exportLogs, logger } from "./config/logs.js";
 import { getCausas } from "./services/casos.service.js";
-import { getAllMetadata, setMetadata } from "./services/metadata.service.js";
+import { printMetadata, setMetadata } from "./services/metadata.service.js";
 import { createBrowserInstance } from "./utils/browser.js";
 import { createFoldersIfNotExists, normalizeString } from "./utils/core.js";
 import { configureRateLimit } from "./tasks/scrape-causa.task.js";
@@ -17,13 +17,14 @@ import { promises as fs } from "fs";
 import db from "./services/db.service.js";
 
 let TOKEN;
-const BD_LIMIT = 200; // Sólo para probar benchmarking
+const BD_LIMIT = 500; // Con 1k banean
+const RATE_LIMIT_CONFIG = { requestsPerBatch: 15, delayMs: 3 * 1000 };
 
 async function main() {
   await createFoldersIfNotExists();
 
   // Configurar rate limiting para scrape-causa (opcional)
-  configureRateLimit({ requestsPerBatch: 10, delayMs: 4000 });
+  configureRateLimit(RATE_LIMIT_CONFIG);
 
   logger.info("--- Fase 0: Obtención de Casos y Browser ---");
   const casos = await getCausas({ limit: BD_LIMIT, applyHash: true });
@@ -94,11 +95,7 @@ async function main() {
   const finalTiming = new Date().getTime();
   logger.info("--- Scraping Completado ---");
   console.log();
-  logger.info("Metadatos:");
-  const metadata = getAllMetadata();
-  for (const [key, value] of Object.entries(metadata)) {
-    logger.info(`- ${key.replaceAll("_", " ")}: ${value}`);
-  }
+  printMetadata();
   console.log();
   logger.info(`Tiempo total: ${(finalTiming - initialTiming) / 1000}s`);
 

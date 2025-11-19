@@ -96,9 +96,8 @@ export async function ejecutarFaseGuardado(
   setMetadata("tiempo_fase_3", `${duracionSegundos}s`);
   setMetadata("casos_guardados_exitosos", guardadosExitosos);
   setMetadata("casos_guardados_fallidos", guardadosFallidos);
-
-  logger.info("--- Etapa 3 Completada ---");
   logger.info(
     `${guardadosExitosos} casos guardados exitosamente, ${guardadosFallidos} fallidos.`
   );
+  logger.info("--- Etapa 3 Completada ---");
 }

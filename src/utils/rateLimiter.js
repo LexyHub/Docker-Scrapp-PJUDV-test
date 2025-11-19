@@ -5,8 +5,14 @@ let RATE_LIMIT_CONFIG = {
   delayMs: 1000,
 };
 
-let _counter = 0;
-let _lastDelayPromise = null;
+// Estadísticas
+let _totalRequests = 0;
+
+// Contador por lote, se reinicia cada vez que aplicamos el delay
+let _batchCount = 0;
+
+// Cola para serializar las llamadas a tick() bajo concurrencia
+let _queueTail = Promise.resolve();
 
 export function configureRateLimit(config = {}) {
   if (config.requestsPerBatch !== undefined) {
@@ -22,24 +28,40 @@ function delay(ms) {
 }
 
 /**
- * lamar esta función antes de realizar una peticion a pjud.
- * tiene un contador global y si se alcanza el batch, espera delayMs.
+ * Llamar esta función antes de realizar una petición a PJUD.
+ * Serializa el acceso para garantizar que, bajo alta concurrencia, se aplique
+ * una pausa cada `requestsPerBatch` peticiones.
  */
 export async function tick() {
-  _counter++;
-  const { requestsPerBatch, delayMs } = RATE_LIMIT_CONFIG;
-  if (requestsPerBatch > 0 && _counter % requestsPerBatch === 0) {
-    logger.warn(
-      `Rate limit alcanzado: ${requestsPerBatch} peticiones. Esperando ${delayMs} ms...`
-    );
-    // Si ya hay una promesa de delay en curso, encadenarla
-    if (_lastDelayPromise) await _lastDelayPromise;
-    _lastDelayPromise = delay(delayMs);
-    await _lastDelayPromise;
-    _lastDelayPromise = null;
+  // Serializar: cada tick espera al anterior para asegurar consistencia
+  const prev = _queueTail;
+  let release;
+  _queueTail = new Promise((res) => (release = res));
+  await prev;
+
+  try {
+    _totalRequests += 1;
+    _batchCount += 1;
+
+    const { requestsPerBatch, delayMs } = RATE_LIMIT_CONFIG;
+    if (requestsPerBatch > 0 && _batchCount >= requestsPerBatch) {
+      // Resetear el contador del lote y esperar
+      _batchCount = 0;
+      logger.warn(
+        `Rate limit alcanzado: ${requestsPerBatch} peticiones. Esperando ${delayMs} ms...`
+      );
+      await delay(delayMs);
+    }
+  } finally {
+    // Liberar siguiente en la cola
+    release();
   }
 }
 
 export function getRateLimitStats() {
-  return { counter: _counter, config: { ...RATE_LIMIT_CONFIG } };
+  return {
+    totalRequests: _totalRequests,
+    batchCount: _batchCount,
+    config: { ...RATE_LIMIT_CONFIG },
+  };
 }

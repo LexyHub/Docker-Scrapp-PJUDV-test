@@ -1,5 +1,7 @@
 // se crea un objeto para almacenar y buscar metadatos de forma eficiente O(1).
 
+import { logger } from "../config/logs.js";
+
 const METADATA = {};
 
 /**
@@ -50,4 +52,20 @@ export function getMetadata(key) {
  */
 export function getAllMetadata() {
   return METADATA;
+}
+
+/**
+ * Función para imprimir todos los metadatos en consola.
+ */
+export function printMetadata() {
+  const keys = Object.keys(METADATA).sort();
+  logger.info("Metadatos:");
+  for (const key of keys) {
+    const value = METADATA[key];
+    const formattedKey = key
+      .split("_")
+      .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(" ");
+    logger.info(`- ${formattedKey}: ${value}`);
+  }
 }

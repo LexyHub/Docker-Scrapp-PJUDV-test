@@ -13,6 +13,7 @@ import { CASE_EXTRACTION_LIMIT } from "../constants/limits.js";
 import crypto from "crypto";
 import { movimientoHash } from "../utils/hashing.js";
 import { hasHash } from "../services/hash.service.js";
+import { cleanText, isBlacklisted } from "../utils/helpers.js";
 
 /**
  * Realiza una petición POST para extraer el HTML (texto) del modal de una causa civil.
@@ -41,7 +42,6 @@ async function extractModal(page, tokenCausa, tokenGlobal) {
           },
           timeout: 60000,
         });
-        sumToMetadata("requests", 1);
         if (!response.ok()) {
           throw new Error(`Respuesta no OK: ${response.status()}`);
         }
@@ -56,7 +56,7 @@ async function extractModal(page, tokenCausa, tokenGlobal) {
     logger.error(
       `[API Fetch] Error final en page.request para ${tokenCausa}: ${err.message}`
     );
-    sumToMetadata("causas_fallidas", 1);
+    sumToMetadata("causas_fallidas_o_sin_movimientos", 1);
     return null;
   }
 }
@@ -240,7 +240,6 @@ async function extractInfoNotificacionesReceptor(page, token) {
           },
           timeout: 60000, // Aumentado a 60s
         });
-        sumToMetadata("requests", 1);
         if (!response.ok()) {
           throw new Error(`Respuesta no OK: ${response.status()}`);
         }
@@ -320,7 +319,6 @@ async function extractAnexoCausaModal(page, tokenAnexo) {
           },
           timeout: 60000, // Aumentado a 60s
         });
-        sumToMetadata("requests", 1);
 
         if (!response.ok()) {
           logger.warn(
@@ -450,10 +448,11 @@ export async function scrapTablas(page, html) {
       const rowData = {};
       const $row = $(rowElement);
       const anexoTokensPendientes = []; // Almacenar tokens de anexos para procesar después
+      const archivosRegularesPendientes = []; // Almacenar info de archivos regulares para procesar después
 
       const cells = $row.find("td").get();
 
-      // PRIMERA PASADA: Extraer toda la data de texto y tokens de anexos (sin hacer fetch aún)
+      // PRIMERA PASADA: Extraer solo data de texto y tokens (sin generar URLs de archivos aún)
       for (let cellIndex = 0; cellIndex < cells.length; cellIndex++) {
         const cellElement = cells[cellIndex];
         const $cell = $(cellElement);
@@ -462,31 +461,30 @@ export async function scrapTablas(page, html) {
 
         if (!hasChildElement) {
           rowData[key] = $cell.text().trim();
+          if (
+            key.includes("folio") ||
+            key.includes("fec_tramite") ||
+            key.includes("desc_tramite")
+          ) {
+            logger.debug(`Extracted ${key}: ${rowData[key]}`); // Debugging log
+            logToFile({
+              message: `Extracted ${key}: ${rowData[key]}`,
+              type: "debug",
+            });
+          }
         } else {
           const isAnexo =
             $cell.find("a[href*='modalAnexoSolicitudCivil']").length > 0;
           const isFile = $cell.find("form").length > 0;
 
           if (isFile) {
-            const archivos = [];
-            $cell.find("form").each((_, formElement) => {
-              // pjud guarda el token del archivo en un input oculto dentro del form
-              // tmb como son distintos tipos guardan el tipo de archivo para la url en el name del input
-              const rawUrl = $(formElement).attr("action") || "";
-              const value = $(formElement).find("input").attr("value") || "";
-              const fileType = $(formElement).find("input").attr("name") || "";
-              const url = `https://oficinajudicialvirtual.pjud.cl/${rawUrl}?${fileType}=${value}`;
-              logToFile({
-                message: `Archivo generado en URL: ${url}`,
-                type: "debug",
-              });
-              archivos.push({
-                name: crypto.randomUUID(),
-                url,
-                type: "regular",
-              });
-            });
-            rowData[key] = archivos.length > 0 ? archivos : [];
+            // Guardar los formularios para procesar solo si el hash es nuevo
+            const forms = $cell.find("form").get();
+            if (forms.length > 0) {
+              archivosRegularesPendientes.push({ cellIndex, key, forms });
+            }
+            // Inicializar con array vacío por ahora
+            rowData[key] = [];
           } else if (isAnexo) {
             // Extraer los tokens de anexos sin hacer peticiones aún
             const anexoLinks = $cell
@@ -516,17 +514,42 @@ export async function scrapTablas(page, html) {
       }
 
       // SEGUNDA PASADA: Ahora que tenemos toda la data de texto, verificar el hash
-      if (rowData.folio || rowData.fec_tramite || rowData.desc_tramite) {
-        // normalizamos fec_tramite
-        rowData.fec_tramite = String(rowData.fec_tramite.split(" ")[0]);
+      // Solo aplicamos hashing para historiaCiv (movimientos), las demás tablas se agregan siempre
+      if (key === "historiaCiv") {
+        // Normalizar y crear hash con los campos disponibles (usa "" para campos vacíos, igual que BD)
+        const fecha = rowData.fec_tramite ? cleanText(rowData.fec_tramite) : "";
+        const fechaNormalizada = fecha ? String(fecha.split(" ")[0]) : "";
+        rowData.fec_tramite = fechaNormalizada;
+
         const hash = movimientoHash({
-          desc_tramite: String(rowData.desc_tramite),
-          folio: String(rowData.folio),
-          fecha_movimiento: String(rowData.fec_tramite),
+          desc_tramite: rowData.desc_tramite || "",
+          folio: rowData.folio || "",
+          fecha_movimiento: fechaNormalizada,
         });
 
-        if (!hasHash(hash)) {
-          // El movimiento es nuevo, procesar los anexos pendientes
+        if (!hasHash(hash) && !isBlacklisted(rowData.desc_tramite || "")) {
+          // El movimiento es nuevo, procesar archivos regulares
+          for (const { key: cellKey, forms } of archivosRegularesPendientes) {
+            const archivos = [];
+            for (const formElement of forms) {
+              const rawUrl = $(formElement).attr("action") || "";
+              const value = $(formElement).find("input").attr("value") || "";
+              const fileType = $(formElement).find("input").attr("name") || "";
+              const url = `https://oficinajudicialvirtual.pjud.cl/${rawUrl}?${fileType}=${value}`;
+              logToFile({
+                message: `Archivo generado en URL: ${url}`,
+                type: "debug",
+              });
+              archivos.push({
+                name: crypto.randomUUID(),
+                url,
+                type: "regular",
+              });
+            }
+            rowData[cellKey] = archivos;
+          }
+
+          // Procesar los anexos pendientes
           for (const { key: cellKey, tokens } of anexoTokensPendientes) {
             const anexos = [];
 
@@ -544,28 +567,42 @@ export async function scrapTablas(page, html) {
           _tableData.push({ ...rowData, hash });
           sumToMetadata("movimientos_procesados", 1);
         } else {
-          // El movimiento ya existe, no procesar anexos
+          // El movimiento ya existe, no procesar archivos ni anexos
           sumToMetadata("movimientos_omitidos", 1);
           logToFile({
-            message: `Movimiento con Hash ${hash} omitido; información del movimiento: folio: ${rowData.folio}; fecha: ${rowData.fec_tramite}; descripción: ${rowData.desc_tramite}`,
+            message: `Movimiento con Hash ${hash} omitido; información del movimiento: folio: ${
+              rowData.folio || "(vacío)"
+            }; fecha: ${fechaNormalizada || "(vacío)"}; descripción: ${
+              rowData.desc_tramite || "(vacío)"
+            }`,
           });
         }
       } else {
-        // No es un movimiento con folio/tramite, agregar directamente
-        // Si hay anexos pendientes, procesarlos de todas formas
-        for (const { key: cellKey, tokens } of anexoTokensPendientes) {
-          const anexos = [];
-
-          for (const token of tokens) {
-            const anexoHtml = await extractAnexoModal(page, token);
-            if (anexoHtml) {
-              const anexoData = await scrapDataFromAnexo(anexoHtml);
-              anexos.push(anexoData);
-            }
+        // Para otras tablas (litigantes, notificaciones, escritos, exhortos), procesar sin hashing
+        // Estas tablas NO tienen anexos, solo archivos regulares
+        // Procesar archivos regulares pendientes
+        for (const { key: cellKey, forms } of archivosRegularesPendientes) {
+          const archivos = [];
+          for (const formElement of forms) {
+            const rawUrl = $(formElement).attr("action") || "";
+            const value = $(formElement).find("input").attr("value") || "";
+            const fileType = $(formElement).find("input").attr("name") || "";
+            const url = `https://oficinajudicialvirtual.pjud.cl/${rawUrl}?${fileType}=${value}`;
+            logToFile({
+              message: `Archivo generado en URL: ${url}`,
+              type: "debug",
+            });
+            archivos.push({
+              name: crypto.randomUUID(),
+              url,
+              type: "regular",
+            });
           }
-
-          rowData[cellKey] = anexos;
+          rowData[cellKey] = archivos;
         }
+
+        // Las otras tablas NO tienen anexos, se omite el procesamiento
+        // anexoTokensPendientes solo es relevante para historiaCiv
 
         _tableData.push(rowData);
       }
@@ -600,7 +637,6 @@ export async function extractAnexoModal(page, val) {
           },
           timeout: 60000, // Aumentado a 60s
         });
-        sumToMetadata("requests", 1);
 
         if (!response.ok()) {
           logger.warn(
